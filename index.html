@@ -1,0 +1,2878 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#0f1115">
+  <title>节拍器 Metronome</title>
+  <style>
+/* ==================== CSS Variables / 主题 ==================== */
+:root {
+  --bg: #0f1115;
+  --bg-elev: #181b22;
+  --bg-elev-2: #1f2330;
+  --border: #2a2f3a;
+  --text: #e6e8ee;
+  --text-muted: #8b909c;
+  --text-dim: #5b6070;
+  --accent: #4dd0e1;
+  --accent-strong: #26c6da;
+  --accent-warm: #ffb74d;
+  --danger: #ef5350;
+  --success: #66bb6a;
+  --shadow: 0 8px 30px rgba(0,0,0,.35);
+  --radius: 14px;
+  --radius-sm: 8px;
+  --tap: 44px;
+  --field-h: 38px; /* 全项目表单元素统一高度 */
+}
+
+[data-theme="light"] {
+  --bg: #f5f6fa;
+  --bg-elev: #ffffff;
+  --bg-elev-2: #eef0f5;
+  --border: #d4d7e0;
+  --text: #1a1d26;
+  --text-muted: #5b6070;
+  --text-dim: #8b909c;
+  --accent: #00acc1;
+  --accent-strong: #0097a7;
+  --accent-warm: #ff9800;
+  --danger: #e53935;
+  --success: #43a047;
+  --shadow: 0 8px 30px rgba(0,0,0,.10);
+}
+
+/* ==================== Reset ==================== */
+*,*::before,*::after { box-sizing: border-box; }
+html, body { margin:0; padding:0; height:100%; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+               "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+button { font: inherit; cursor: pointer; border: none; background: none; color: inherit; }
+input, select { font: inherit; color: inherit; }
+ul { list-style: none; margin:0; padding:0; }
+.hidden { display: none !important; }
+
+/* ==================== Topbar ==================== */
+.topbar {
+  height: 56px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 0 20px;
+  background: var(--bg-elev);
+  border-bottom: 1px solid var(--border);
+  position: relative;
+  z-index: 10;
+}
+.brand { display:flex; align-items:center; gap:8px; font-weight:600; }
+.brand-dot {
+  width: 12px; height: 12px; border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 12px var(--accent);
+}
+.brand-name { font-size: 16px; letter-spacing: .5px; }
+
+.mode-switch {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex; gap: 4px;
+  background: var(--bg-elev-2);
+  padding: 4px; border-radius: var(--radius-sm);
+}
+.mode-btn {
+  padding: 6px 14px;
+  border-radius: 6px;
+  color: var(--text-muted);
+  font-size: 14px;
+  transition: all .2s;
+  min-height: 32px;
+}
+.mode-btn.active { background: var(--accent); color: #000; font-weight: 600; }
+
+.topbar-right { margin-left: auto; }
+.icon-btn {
+  width: 36px; height: 36px; border-radius: 50%;
+  display:inline-flex; align-items:center; justify-content:center;
+  font-size: 16px; color: var(--text-muted);
+  transition: all .2s;
+}
+.icon-btn:hover { background: var(--bg-elev-2); color: var(--text); }
+
+/* ==================== Layout ==================== */
+.layout {
+  display: grid;
+  grid-template-columns: 320px 1fr;
+  grid-template-rows: 1fr;
+  grid-template-areas:
+    "ctrl viz";
+  gap: 16px;
+  padding: 16px;
+  height: calc(100vh - 56px);
+  overflow: hidden;
+}
+/* 练习/舞台模式：显示加宽的列表区 */
+.layout.with-side {
+  grid-template-columns: 300px 1fr 420px;
+  grid-template-areas: "ctrl viz side";
+}
+.control-panel { grid-area: ctrl; }
+.viz-area { grid-area: viz; }
+.side-panel { grid-area: side; }
+
+.control-panel, .side-panel, .viz-area {
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.control-panel { overflow: auto; }
+
+/* 练习/舞台模式：隐藏控制面板，布局改为 可视化 + 列表 两栏 */
+body.mode-practice .control-panel,
+body.mode-stage .control-panel { display: none; }
+/* 练习/舞台模式下空格与上下箭头已禁用，仅隐藏快捷键提示；状态栏正常显示 */
+body.mode-practice .viz-tip,
+body.mode-stage .viz-tip { display: none; }
+body.mode-practice .layout.with-side,
+body.mode-stage .layout.with-side {
+  grid-template-columns: 1fr 420px;
+  grid-template-areas: "viz side";
+}
+
+/* ==================== Visualization ==================== */
+.viz-area {
+  display: flex;
+  flex-direction: column;
+  padding: 20px;
+  gap: 16px;
+}
+.viz-status {
+  display: flex; gap: 24px; flex-wrap: wrap;
+}
+.status-block { display:flex; flex-direction:column; align-items:flex-start; gap:2px; }
+.status-label { font-size: 11px; color: var(--text-dim); text-transform: uppercase; letter-spacing:1px; }
+.status-value { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.viz-canvas-wrap {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 200px;
+}
+#viz-canvas { width: 100%; max-width: 800px; height: 100%; max-height: 320px; }
+.viz-meta {
+  text-align: center; color: var(--text-muted); font-size: 14px;
+  padding: 8px; border-radius: var(--radius-sm);
+  background: var(--bg-elev-2);
+}
+.viz-tip {
+  text-align: center; color: var(--text-dim); font-size: 12px;
+}
+
+/* ==================== Control Panel ==================== */
+.control-panel { padding: 20px; display: flex; flex-direction: column; gap: 14px; }
+/* label 与可编辑项同一行；label 固定列宽右对齐（换行时也右对齐） */
+.control-group { display: flex; flex-direction: row; align-items: center; gap: 12px; }
+.control-label {
+  flex: 0 0 80px; width: 80px;
+  font-size: 14px; color: var(--text-muted); letter-spacing: .5px;
+  text-align: justify; text-align-last: right;
+  line-height: 1.4;
+}
+.control-fields { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 10px; }
+
+.play-btn {
+  flex: 1;
+  height: var(--tap);
+  border-radius: var(--radius-sm);
+  background: var(--accent);
+  color: #000;
+  font-weight: 700;
+  font-size: 16px;
+  display: inline-flex; align-items:center; justify-content:center; gap:8px;
+  transition: all .15s;
+}
+.play-btn:hover { background: var(--accent-strong); transform: translateY(-1px); }
+.play-btn:active { transform: translateY(0); }
+.play-btn.playing { background: var(--danger); color: #fff; }
+.play-btn.playing .play-icon::before { content: "■"; }
+.play-btn.playing .play-icon { font-size: 12px; }
+.play-icon::before { content: "▶"; font-size: 14px; }
+.play-icon { display:inline-block; }
+
+.ghost-btn {
+  height: var(--tap); min-width: var(--tap);
+  border-radius: var(--radius-sm);
+  background: var(--bg-elev-2);
+  color: var(--text);
+  font-size: 18px;
+  display:inline-flex; align-items:center; justify-content:center;
+  transition: all .15s;
+}
+.ghost-btn:hover { background: var(--border); }
+
+.control-group-play { flex-direction: row; gap: 8px; }
+
+/* BPM */
+.bpm-control { display: flex; align-items: center; gap: 8px; }
+.step-btn {
+  width: 40px; height: var(--field-h);
+  border-radius: 6px;
+  background: var(--bg-elev-2);
+  border: 1px solid var(--border);
+  font-weight: 600; font-size: 13px;
+  transition: all .15s;
+}
+.step-btn:hover { background: var(--border); }
+.step-btn:active { transform: scale(.95); }
+.bpm-input {
+  flex: 1;
+  height: var(--field-h);
+  text-align: center;
+  background: var(--bg-elev-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 18px; font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  -moz-appearance: textfield;
+}
+.bpm-input::-webkit-outer-spin-button, .bpm-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+
+/* 滑块：视觉轨道细、触控热区高（24px），避免误触 */
+.slider {
+  -webkit-appearance: none; appearance: none;
+  width: 100%; height: 24px;
+  background: transparent;
+  outline: none;
+  cursor: pointer;
+  margin: 0;
+}
+.slider::-webkit-slider-runnable-track {
+  height: 6px; border-radius: 3px; background: var(--bg-elev-2);
+}
+.slider::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none;
+  width: 20px; height: 20px; margin-top: -7px; border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 2px var(--bg-elev);
+}
+.slider::-moz-range-track {
+  height: 6px; border-radius: 3px; background: var(--bg-elev-2);
+}
+.slider::-moz-range-thumb {
+  width: 20px; height: 20px; border-radius: 50%;
+  background: var(--accent); cursor: pointer; border: none;
+}
+
+.select {
+  height: var(--field-h);
+  padding: 0 12px;
+  background: var(--bg-elev-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 14px;
+  flex: 1;
+  min-width: 0;
+}
+/* 音量行：滑块 + 数值 */
+.volume-control {
+  flex: 1; min-width: 0;
+  display: flex; align-items: center; gap: 10px;
+}
+.volume-control .slider { flex: 1; }
+.volume-value {
+  flex: 0 0 36px; width: 36px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600; font-size: 14px;
+}
+
+/* ==================== Side Panel ==================== */
+.side-panel {
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.panel-view {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+.panel-title { margin: 0 0 8px; font-size: 18px; }
+/* 标题行：标题与小型 + 新建按钮同行 */
+.panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+  flex-shrink: 0;
+}
+.panel-head .panel-title { margin: 0; }
+.add-icon-btn {
+  width: 60px; height: 36px;
+  flex: none;
+  border-radius: 8px;
+  background: var(--accent);
+  color: #000;
+  font-size: 20px; font-weight: 700; line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: all .15s;
+}
+.add-icon-btn:hover { background: var(--accent-strong); }
+.primary-btn {
+  height: var(--tap);
+  padding: 0 16px;
+  border-radius: var(--radius-sm);
+  background: var(--accent);
+  color: #000; font-weight: 600;
+  transition: all .15s;
+}
+.primary-btn:hover { background: var(--accent-strong); }
+
+.info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.info-item {
+  display: flex; flex-direction: column; gap: 2px;
+  padding: 10px; border-radius: var(--radius-sm);
+  background: var(--bg-elev-2);
+}
+.info-label { font-size: 11px; color: var(--text-dim); text-transform: uppercase; }
+.info-value { font-size: 18px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.tip { font-size: 12px; color: var(--text-dim); padding: 8px; border-radius: 6px; background: var(--bg-elev-2); }
+
+/* 练习/歌曲 列表：占满剩余空间并内部滚动 */
+.item-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 4px;
+  flex: 1;
+  min-height: 0;          /* flex column 内吃剩余空间的关键；否则默认 min-height:auto 会按内容撑开 */
+  overflow-y: auto;       /* 默认就在自身容器内滚动，避免被父层 overflow:hidden 截断 */
+  padding-right: 2px;
+}
+.practice-status, .stage-status { flex-shrink: 0; }
+.panel-title, .primary-btn { flex-shrink: 0; }
+.item-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-elev-2);
+  cursor: pointer;
+  transition: background .15s;
+  border: 1px solid transparent;
+}
+.item-row:hover { background: var(--bg-elev-2); border-color: var(--border); }
+.item-row.playing { border-color: var(--accent); background: var(--bg-elev); }
+.item-num {
+  flex-shrink: 0;
+  width: 26px; height: 26px;
+  border-radius: 50%;
+  background: var(--bg);
+  color: var(--text-muted);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 700;
+}
+.item-row.playing .item-num { background: var(--accent); color: #000; }
+.item-info { flex: 1; min-width: 0; }
+.item-name { font-size: 14px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.item-sub { font-size: 11px; color: var(--text-dim); margin-top: 2px; }
+.item-actions { display: flex; gap: 4px; }
+.item-actions button {
+  width: 28px; height: 28px; border-radius: 6px;
+  background: transparent; color: var(--text-muted);
+  font-size: 14px;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.item-actions button:hover { background: var(--bg); color: var(--text); }
+
+.practice-status, .stage-status {
+  padding: 12px; border-radius: var(--radius-sm);
+  background: var(--bg-elev-2);
+  display: flex; flex-direction: column; gap: 6px;
+  font-size: 13px;
+}
+.ps-row, .ss-row { display: flex; justify-content: space-between; }
+.ps-row span:first-child, .ss-row span:first-child { color: var(--text-dim); }
+.ss-song { font-size: 16px; font-weight: 700; }
+.ss-label { color: var(--text-dim) !important; font-size: 11px !important; text-transform: uppercase; }
+.ps-progress {
+  height: 6px; background: var(--bg); border-radius: 3px; overflow: hidden; margin-top: 4px;
+}
+.ps-progress-bar {
+  height: 100%; width: 0%;
+  background: linear-gradient(90deg, var(--accent), var(--accent-warm));
+  transition: width .3s;
+}
+
+/* ==================== Modal ==================== */
+.modal-mask {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,.5);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 100;
+}
+.modal {
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  width: min(500px, 92vw);
+  max-height: 88vh;
+  display: flex; flex-direction: column;
+  box-shadow: var(--shadow);
+}
+.modal-header {
+  padding: 16px 20px; border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between;
+}
+.modal-header h3 { margin: 0; font-size: 16px; }
+.modal-body { padding: 20px; overflow: auto; flex: 1; }
+.modal-footer {
+  padding: 12px 20px; border-top: 1px solid var(--border);
+  display: flex; justify-content: flex-end; gap: 8px;
+}
+.form-row { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
+.form-row label { font-size: 12px; color: var(--text-muted); }
+.form-row input, .form-row select {
+  height: var(--field-h);
+  padding: 0 10px;
+  background: var(--bg-elev-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 14px;
+}
+.form-row-inline { display: flex; gap: 8px; align-items: center; }
+.form-row-inline label { flex: 1; }
+.form-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.seg-list {
+  display: flex; flex-direction: column; gap: 6px;
+  max-height: 260px; overflow: auto;
+  padding: 8px; background: var(--bg-elev-2); border-radius: 6px;
+}
+.seg-row {
+  display: grid;
+  grid-template-columns: 60px 60px 70px 70px 1fr 28px;
+  gap: 6px; align-items: center;
+  font-size: 12px;
+}
+.seg-row input, .seg-row select {
+  height: 28px; padding: 0 4px;
+  background: var(--bg); border: 1px solid var(--border); border-radius: 4px;
+  font-size: 12px;
+}
+.seg-add {
+  margin-top: 6px; padding: 6px;
+  border: 1px dashed var(--border); border-radius: 6px;
+  background: transparent; color: var(--text-muted); font-size: 12px;
+}
+.seg-add:hover { border-color: var(--accent); color: var(--accent); }
+
+/* ==================== 响应式 ==================== */
+/* 平板横屏 / 小笔记本：收窄三栏 */
+@media (max-width: 1279px) {
+  .layout.with-side {
+    grid-template-columns: 280px 1fr 340px;
+  }
+  body.mode-practice .layout.with-side,
+  body.mode-stage .layout.with-side {
+    grid-template-columns: 1fr 340px;
+    grid-template-areas: "viz side";
+  }
+}
+/* 平板竖屏 / 手机：单列堆叠，允许整页滚动 */
+@media (max-width: 1023px) {
+  body { overflow-y: auto; }
+  .layout, .layout.with-side {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto auto auto;
+    grid-template-areas: "viz" "ctrl" "side";
+    height: auto;
+    min-height: calc(100vh - 56px);
+    overflow: visible;
+    align-content: start;
+  }
+  /* 视觉区按内容自适应高度，画布固定高度避免空白 */
+  .viz-area {
+    height: auto;
+    min-height: 0;
+    max-height: none;
+  }
+  .viz-canvas-wrap {
+    flex: none;
+    height: 180px;
+    min-height: 0;
+  }
+  #viz-canvas { max-height: 180px; }
+  /* 控制面板各组垂直堆叠；组内 label 与表单项保持同一行 */
+  .control-panel {
+    flex-direction: column;
+    flex-wrap: nowrap;
+    height: auto;
+    max-height: none;
+    overflow: visible;
+  }
+  .control-panel .control-group,
+  .control-panel .control-group-play {
+    width: 100%;
+    min-width: 0;
+    flex: 0 0 auto;
+  }
+  /* 练习/舞台模式竖屏：控制面板已隐藏，主内容强制单列竖排（视觉在上、列表在下） */
+  body.mode-practice .layout.with-side,
+  body.mode-stage .layout.with-side {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto auto;
+    grid-template-areas: "viz" "side";
+  }
+  /* 视觉为主要内容，给足高度避免被压缩成细条 */
+  body.mode-practice .viz-canvas-wrap,
+  body.mode-stage .viz-canvas-wrap { height: 260px; }
+  body.mode-practice #viz-canvas,
+  body.mode-stage #viz-canvas { max-height: 260px; }
+  .side-panel { max-height: none; min-height: 0; }
+  .side-panel .item-list { max-height: 50vh; }
+}
+/* 手机 */
+@media (max-width: 767px) {
+  body { overflow-y: auto; }
+  .topbar { padding: 0 12px; gap: 8px; }
+  .brand-name { display: none; }
+  .mode-btn { padding: 6px 10px; font-size: 13px; }
+  .layout, .layout.with-side {
+    gap: 8px; padding: 8px;
+    height: auto;
+    min-height: calc(100vh - 56px);
+    grid-template-rows: auto auto auto;
+    overflow: visible;
+  }
+  .viz-area {
+    padding: 12px;
+    gap: 10px;
+    height: auto;
+    min-height: 0;
+    max-height: none;
+  }
+  .viz-canvas-wrap {
+    flex: none;
+    height: 150px;
+    min-height: 0;
+  }
+  #viz-canvas { max-height: 150px; }
+  /* 练习/舞台：竖屏主视觉加大 */
+  body.mode-practice .viz-canvas-wrap,
+  body.mode-stage .viz-canvas-wrap { height: 220px; }
+  body.mode-practice #viz-canvas,
+  body.mode-stage #viz-canvas { max-height: 220px; }
+  .viz-status { gap: 8px 14px; }
+  .status-value { font-size: 16px; }
+  /* 单列布局由 1023 断点统一负责，此处仅收紧间距 */
+  .control-panel { padding: 12px; gap: 14px; }
+  .side-panel { padding: 12px; }
+  .side-panel .item-list { max-height: 45vh; }
+  .seg-row {
+    grid-template-columns: 50px 50px 60px 60px 1fr 24px;
+    font-size: 11px;
+  }
+  /* ========== 练习/舞台模式：窄屏（不管横竖）都锁视口高度 ==========
+     避免 body 滚动 + fixed 底栏遮挡列表；列表项在 item-list 内部滚动。
+     这条规则放在 767px 断点里（只依赖 max-width，不依赖 orientation），
+     防止部分浏览器对 orientation 判定不稳定导致规则完全不生效。
+     高度优先使用 100dvh（动态视口高度，不包含地址栏），fallback 到 100vh。 */
+  body.mode-practice,
+  body.mode-stage { overflow: hidden; }
+  body.mode-practice .layout.with-side,
+  body.mode-stage .layout.with-side {
+    /* 基础模式无底栏，练习/舞台若在 portrait 下需要减掉 52px；
+       但 767px 断点同时命中横屏，此时底栏仍在顶部高度 56px——交由后续的
+       portrait / landscape 断点微调 height，此处先给一个合理默认 */
+    height: calc(100vh - 56px);
+    height: calc(100dvh - 56px);
+    min-height: calc(100vh - 56px);
+    min-height: calc(100dvh - 56px);
+    overflow: hidden;
+    /* 让 grid 行由内容决定，side-panel 吃剩余空间 */
+    grid-template-rows: auto 1fr;
+    align-content: stretch;
+  }
+  body.mode-practice .side-panel,
+  body.mode-stage .side-panel {
+    min-height: 0;
+    overflow: hidden;
+  }
+  body.mode-practice .panel-view,
+  body.mode-stage .panel-view {
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
+  }
+  body.mode-practice .item-list,
+  body.mode-stage .item-list {
+    flex: 1;
+    overflow-y: auto;
+    /* 覆盖本断点里 .side-panel .item-list { max-height: 45vh } */
+    max-height: none !important;
+  }
+}
+/* 手机竖屏：整个导航栏（品牌点 + 模式切换 + 主题）固定到底部，顶部不留栏。
+   布局锁视口高度 / item-list 内部滚动 的通用逻辑已放在 767px 断点，
+   这里只做 portrait 独有的导航栏贴底 + height 微调。 */
+@media (max-width: 767px) and (orientation: portrait) {
+  body {
+    padding-bottom: calc(52px + env(safe-area-inset-bottom, 0px));
+  }
+  .topbar {
+    position: fixed;
+    top: auto;
+    left: 0; right: 0; bottom: 0;
+    height: calc(52px + env(safe-area-inset-bottom, 0px));
+    box-sizing: border-box;
+    padding: 6px 12px calc(6px + env(safe-area-inset-bottom, 0px));
+    gap: 10px;
+    border-bottom: none;
+    border-top: 1px solid var(--border);
+    z-index: 40;
+  }
+  .mode-switch {
+    position: static;
+    transform: none;
+    flex: 1 1 auto;
+    justify-content: center;
+    gap: 6px;
+  }
+  .mode-switch .mode-btn {
+    flex: 1 1 0;
+    max-width: 170px;
+    min-height: 40px;
+  }
+  .topbar-right { margin-left: 0; flex: 0 0 auto; }
+  .brand { flex: 0 0 auto; }
+  /* portrait 下顶栏已移到底部（52px + safe-area），顶部无栏。
+     覆盖 767px 断点里的 height（当时假定顶栏在顶部 56px）。 */
+  .layout, .layout.with-side {
+    min-height: calc(100vh - 52px - env(safe-area-inset-bottom, 0px));
+    min-height: calc(100dvh - 52px - env(safe-area-inset-bottom, 0px));
+  }
+  body.mode-basic { overflow: hidden; }
+  body.mode-basic .layout {
+    height: calc(100vh - 52px - env(safe-area-inset-bottom, 0px));
+    height: calc(100dvh - 52px - env(safe-area-inset-bottom, 0px));
+    min-height: calc(100vh - 52px - env(safe-area-inset-bottom, 0px));
+    min-height: calc(100dvh - 52px - env(safe-area-inset-bottom, 0px));
+  }
+  body.mode-practice .layout.with-side,
+  body.mode-stage .layout.with-side {
+    height: calc(100vh - 52px - env(safe-area-inset-bottom, 0px));
+    height: calc(100dvh - 52px - env(safe-area-inset-bottom, 0px));
+    min-height: calc(100vh - 52px - env(safe-area-inset-bottom, 0px));
+    min-height: calc(100dvh - 52px - env(safe-area-inset-bottom, 0px));
+  }
+}
+/* 极窄屏：收窄 label 列与 ±1 按钮，高度保持统一 */
+@media (max-width: 380px) {
+  .status-value { font-size: 15px; }
+  .viz-status { gap: 8px 10px; }
+  .control-label { flex-basis: 60px; width: 60px; }
+  .step-btn { width: 34px; }
+}
+
+/* 横屏手机：左右两列布局（viz + ctrl/side），side/ctrl 内部滚动 */
+@media (max-height: 480px) and (orientation: landscape) {
+  .topbar { height: 44px; }
+  /* 基础模式：viz + ctrl 两列 */
+  .layout {
+    height: calc(100vh - 44px);
+    height: calc(100dvh - 44px);
+    min-height: calc(100vh - 44px);
+    min-height: calc(100dvh - 44px);
+    overflow: hidden;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: 1fr;
+    grid-template-areas: "viz ctrl";
+  }
+  /* 练习/舞台模式：viz + side 两列（选择器必须完整，否则会被全局
+     body.mode-practice .layout.with-side { grid-template-columns: 1fr 420px } 覆盖） */
+  body.mode-practice .layout.with-side,
+  body.mode-stage .layout.with-side {
+    height: calc(100vh - 44px);
+    height: calc(100dvh - 44px);
+    min-height: calc(100vh - 44px);
+    min-height: calc(100dvh - 44px);
+    overflow: hidden;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: 1fr;
+    grid-template-areas: "viz side";
+  }
+  /* 画布按容器高度自适应，不再用固定像素 */
+  .viz-canvas-wrap { height: 100%; }
+  #viz-canvas { max-height: none; height: 100%; }
+  /* 右侧面板内部滚动 */
+  .control-panel,
+  .side-panel {
+    overflow-y: auto;
+    min-height: 0;
+  }
+}
+
+</style>
+</head>
+<body>
+  <!-- 顶部导航 -->
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-dot"></span>
+      <span class="brand-name">节拍器</span>
+    </div>
+    <nav class="mode-switch" role="tablist" aria-label="模式切换">
+      <button class="mode-btn active" data-mode="basic" role="tab" aria-selected="true">基础</button>
+      <button class="mode-btn" data-mode="practice" role="tab" aria-selected="false">练习</button>
+      <button class="mode-btn" data-mode="stage" role="tab" aria-selected="false">舞台</button>
+    </nav>
+    <div class="topbar-right">
+      <button id="theme-toggle" class="icon-btn" title="切换主题" aria-label="切换主题">◐</button>
+    </div>
+  </header>
+
+  <main class="layout">
+    <!-- 可视化区域 -->
+    <section class="viz-area" aria-label="节拍可视化">
+      <div class="viz-status">
+        <div class="status-block">
+          <span class="status-label">BPM</span>
+          <span class="status-value" id="status-bpm">120</span>
+        </div>
+        <div class="status-block">
+          <span class="status-label">拍号</span>
+          <span class="status-value" id="status-signature">4/4</span>
+        </div>
+        <div class="status-block">
+          <span class="status-label">节奏型</span>
+          <span class="status-value" id="status-rhythm">四分</span>
+        </div>
+        <div class="status-block">
+          <span class="status-label">音色</span>
+          <span class="status-value" id="status-sound">Click</span>
+        </div>
+        <div class="status-block">
+          <span class="status-label">小节</span>
+          <span class="status-value" id="status-measure">1</span>
+        </div>
+        <div class="status-block">
+          <span class="status-label">当前拍</span>
+          <span class="status-value" id="status-beat">-</span>
+        </div>
+        <div class="status-block">
+          <span class="status-label">子拍</span>
+          <span class="status-value" id="status-subbeat">-</span>
+        </div>
+        <div class="status-block">
+          <span class="status-label">已播放</span>
+          <span class="status-value" id="status-measures">0</span>
+        </div>
+        <div class="status-block">
+          <span class="status-label">运行时长</span>
+          <span class="status-value" id="status-runtime">00:00</span>
+        </div>
+      </div>
+      <div class="viz-canvas-wrap">
+        <canvas id="viz-canvas" width="800" height="240"></canvas>
+      </div>
+      <div class="viz-meta" id="viz-meta">准备就绪 · 按空格开始</div>
+      <div class="viz-tip">提示：空格键启停 · ↑/↓ 调节 ±1 BPM</div>
+    </section>
+
+    <!-- 控制面板 -->
+    <section class="control-panel" aria-label="控制面板">
+
+
+      <!-- BPM -->
+      <div class="control-group">
+        <label class="control-label">速度 BPM</label>
+        <div class="control-fields">
+          <div class="bpm-control">
+            <button class="step-btn" data-bpm-step="-1" aria-label="减1">-1</button>
+            <input type="number" id="bpm-input" class="bpm-input" min="40" max="240" value="120" aria-label="BPM">
+            <button class="step-btn" data-bpm-step="1" aria-label="加1">+1</button>
+          </div>
+          <input type="range" id="bpm-slider" class="slider" min="40" max="240" value="120" aria-label="BPM 滑块">
+        </div>
+      </div>
+
+      <!-- 拍号 -->
+      <div class="control-group">
+        <label class="control-label">拍号</label>
+        <select id="sig-select" class="select" aria-label="拍号">
+          <option value="2/4">2/4</option>
+          <option value="3/4">3/4</option>
+          <option value="4/4" selected>4/4</option>
+          <option value="5/4">5/4</option>
+          <option value="6/8">6/8</option>
+          <option value="7/8">7/8</option>
+          <option value="9/8">9/8</option>
+          <option value="12/8">12/8</option>
+        </select>
+      </div>
+
+      <!-- 节奏型 -->
+      <div class="control-group">
+        <label class="control-label">节奏型</label>
+        <select id="rhythm-select" class="select" aria-label="节奏型"></select>
+      </div>
+
+      <!-- 音色（独立一行） -->
+      <div class="control-group">
+        <label class="control-label">音色</label>
+        <select id="sound-select" class="select" aria-label="音色">
+          <option value="click" selected>Click 滴答</option>
+          <option value="clave">Clave 响板</option>
+          <option value="kick">Kick 底鼓</option>
+          <option value="snare">Snare 军鼓</option>
+          <option value="clap">Clap 拍手</option>
+          <option value="sine">Sine 正弦</option>
+          <option value="square">Square 方波</option>
+          <option value="triangle">Triangle 三角</option>
+          <option value="voice-en">Vocal one</option>
+          <option value="voice-zh">Vocal 1</option>
+        </select>
+      </div>
+
+      <!-- 音量（独立一行） -->
+      <div class="control-group">
+        <label class="control-label">音量</label>
+        <div class="volume-control">
+          <input type="range" id="volume-slider" class="slider" min="0" max="100" value="80" aria-label="音量">
+          <span class="volume-value" id="volume-value">80</span>
+        </div>
+      </div>
+
+            <!-- 启停 -->
+      <div class="control-group control-group-play">
+        <button id="play-btn" class="play-btn" aria-label="开始/停止">
+          <span class="play-icon">▶</span>
+          <span class="play-label">开始</span>
+        </button>
+        <button id="mute-btn" class="ghost-btn" aria-label="静音">🔊</button>
+        <button id="reset-btn" class="ghost-btn" aria-label="重置">⟲</button>
+      </div>
+    </section>
+
+    <!-- 右侧动态区域（练习/舞台模式列表；基础模式隐藏） -->
+    <section class="side-panel hidden" id="side-panel" aria-label="列表区">
+      <!-- 练习模式 -->
+      <div class="panel-view hidden" data-view="practice">
+        <div class="panel-head">
+          <h2 class="panel-title">练习方案</h2>
+          <button id="add-practice" class="add-icon-btn" aria-label="新建方案" title="新建方案">+</button>
+        </div>
+        <div class="practice-status" id="practice-status">
+          <div class="ps-row"><span>方案</span><span id="ps-name">-</span></div>
+          <div class="ps-row"><span>当前 BPM</span><span id="ps-bpm">-</span></div>
+          <div class="ps-row"><span>目标 BPM</span><span id="ps-target">-</span></div>
+          <div class="ps-row"><span>距下次递增</span><span id="ps-remain">-</span></div>
+          <div class="ps-progress"><div class="ps-progress-bar" id="ps-progress"></div></div>
+        </div>
+        <ul class="item-list" id="practice-list"></ul>
+      </div>
+
+      <!-- 舞台模式 -->
+      <div class="panel-view hidden" data-view="stage">
+        <div class="panel-head">
+          <h2 class="panel-title">歌曲列表</h2>
+          <button id="add-song" class="add-icon-btn" aria-label="新建歌曲" title="新建歌曲">+</button>
+        </div>
+        <div class="stage-status" id="stage-status">
+          <div class="ss-song"><span class="ss-label">当前</span><span id="ss-current">-</span></div>
+          <div class="ss-row"><span>小节</span><span id="ss-measure">-</span></div>
+          <div class="ss-row"><span>下一首</span><span id="ss-next">-</span></div>
+        </div>
+        <ul class="item-list" id="song-list"></ul>
+      </div>
+    </section>
+  </main>
+
+  <!-- 通用弹窗 -->
+  <div class="modal-mask hidden" id="modal-mask">
+    <div class="modal" id="modal" role="dialog" aria-modal="true">
+      <header class="modal-header">
+        <h3 id="modal-title">弹窗</h3>
+        <button id="modal-close" class="icon-btn" aria-label="关闭">✕</button>
+      </header>
+      <div class="modal-body" id="modal-body"></div>
+      <footer class="modal-footer">
+        <button id="modal-cancel" class="ghost-btn">取消</button>
+        <button id="modal-ok" class="primary-btn">确定</button>
+      </footer>
+    </div>
+  </div>
+
+  <script>
+// storage.js - 本地存储封装
+(function (global) {
+  'use strict';
+
+  const KEY_PRACTICE = 'metronome.practice';
+  const KEY_SONGS = 'metronome.songs';
+  const KEY_PREFS = 'metronome.prefs';
+  const KEY_THEME = 'metronome.theme';
+
+  // 检测 localStorage 是否可用（file:// 直开时个别平台/浏览器可能禁用）
+  let memoryStore = null;
+  (function detect() {
+    try {
+      const t = '__mt_test__';
+      window.localStorage.setItem(t, '1');
+      window.localStorage.removeItem(t);
+    } catch (e) {
+      memoryStore = {}; // 降级为内存存储：当前会话内功能正常，刷新后不保留
+    }
+  })();
+
+  function load(key, fallback) {
+    try {
+      const raw = memoryStore ? Object.prototype.hasOwnProperty.call(memoryStore, key) ? memoryStore[key] : null
+                              : window.localStorage.getItem(key);
+      if (!raw) return fallback;
+      return JSON.parse(raw);
+    } catch (e) {
+      console.warn('load failed', key, e);
+      return fallback;
+    }
+  }
+
+  function save(key, value) {
+    try {
+      const raw = JSON.stringify(value);
+      if (memoryStore) memoryStore[key] = raw;
+      else window.localStorage.setItem(key, raw);
+    } catch (e) {
+      console.warn('save failed', key, e);
+    }
+  }
+
+  global.Storage = {
+    loadPractice: () => load(KEY_PRACTICE, []),
+    savePractice: (arr) => save(KEY_PRACTICE, arr),
+    loadSongs: () => load(KEY_SONGS, []),
+    saveSongs: (arr) => save(KEY_SONGS, arr),
+    loadPrefs: () => load(KEY_PREFS, {}),
+    savePrefs: (p) => save(KEY_PREFS, p),
+    loadTheme: () => load(KEY_THEME, 'dark'),
+    saveTheme: (t) => save(KEY_THEME, t),
+    _KEYS: { KEY_PRACTICE, KEY_SONGS, KEY_PREFS, KEY_THEME }
+  };
+})(window);
+
+</script>
+  <script>
+// audio-engine.js - Web Audio API 精确节拍调度
+(function (global) {
+  'use strict';
+
+  /**
+   * 音色合成器：使用 Web Audio API 合成节拍声音
+   * 支持的音色：click, clave, kick, snare, clap, sine, square, triangle
+   */
+  const SOUNDS = {
+    click: (ctx, t, accent) => synthClick(ctx, t, accent),
+    clave: (ctx, t, accent) => synthClave(ctx, t, accent),
+    kick: (ctx, t, accent) => synthKick(ctx, t, accent),
+    snare: (ctx, t, accent) => synthSnare(ctx, t, accent),
+    clap: (ctx, t, accent) => synthClap(ctx, t, accent),
+    sine: (ctx, t, accent) => synthWave(ctx, t, 'sine', accent),
+    square: (ctx, t, accent) => synthWave(ctx, t, 'square', accent),
+    triangle: (ctx, t, accent) => synthWave(ctx, t, 'triangle', accent)
+  };
+
+  function synthClick(ctx, t, accent) {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'square';
+    osc.frequency.setValueAtTime(accent ? 1500 : 1000, t);
+    gain.gain.setValueAtTime(accent ? 0.6 : 0.3, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.02);
+    osc.connect(gain).connect(ctx.destination);
+    osc.start(t); osc.stop(t + 0.03);
+  }
+
+  function synthClave(ctx, t, accent) {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(accent ? 2500 : 1800, t);
+    gain.gain.setValueAtTime(accent ? 0.5 : 0.25, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.05);
+    osc.connect(gain).connect(ctx.destination);
+    osc.start(t); osc.stop(t + 0.06);
+  }
+
+  function synthKick(ctx, t, accent) {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.frequency.setValueAtTime(150, t);
+    osc.frequency.exponentialRampToValueAtTime(50, t + 0.1);
+    gain.gain.setValueAtTime(accent ? 0.8 : 0.5, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.2);
+    osc.connect(gain).connect(ctx.destination);
+    osc.start(t); osc.stop(t + 0.25);
+  }
+
+  function synthSnare(ctx, t, accent) {
+    // 噪声 + 振荡
+    const bufferSize = ctx.sampleRate * 0.2;
+    const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
+    const noise = ctx.createBufferSource();
+    noise.buffer = buffer;
+    const noiseFilter = ctx.createBiquadFilter();
+    noiseFilter.type = 'highpass'; noiseFilter.frequency.value = 1000;
+    const noiseGain = ctx.createGain();
+    noiseGain.gain.setValueAtTime(accent ? 0.5 : 0.3, t);
+    noiseGain.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
+    noise.connect(noiseFilter).connect(noiseGain).connect(ctx.destination);
+    noise.start(t); noise.stop(t + 0.15);
+    // tone
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'triangle'; osc.frequency.value = 200;
+    gain.gain.setValueAtTime(accent ? 0.4 : 0.2, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.1);
+    osc.connect(gain).connect(ctx.destination);
+    osc.start(t); osc.stop(t + 0.12);
+  }
+
+  function synthClap(ctx, t, accent) {
+    const vol = accent ? 0.6 : 0.35;
+    [0, 0.01, 0.02].forEach(off => {
+      const bufferSize = ctx.sampleRate * 0.05;
+      const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+      const data = buffer.getChannelData(0);
+      for (let i = 0; i < bufferSize; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / bufferSize);
+      const src = ctx.createBufferSource();
+      src.buffer = buffer;
+      const f = ctx.createBiquadFilter();
+      f.type = 'bandpass'; f.frequency.value = 1200; f.Q.value = 2;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(vol, t + off);
+      g.gain.exponentialRampToValueAtTime(0.001, t + off + 0.08);
+      src.connect(f).connect(g).connect(ctx.destination);
+      src.start(t + off); src.stop(t + off + 0.08);
+    });
+  }
+
+  function synthWave(ctx, t, type, accent) {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(accent ? 880 : 660, t);
+    gain.gain.setValueAtTime(accent ? 0.3 : 0.15, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.06);
+    osc.connect(gain).connect(ctx.destination);
+    osc.start(t); osc.stop(t + 0.07);
+  }
+
+  /**
+   * 节奏型定义（均为"一拍内"模式，notes 为拍内各音符时值，总和=1 拍）
+   *   quarter          四分 ♩         [1]
+   *   eighth           八分 ♪♪        [0.5, 0.5]
+   *   sixteenth        十六分 ♬♬    [0.25 × 4]
+   *   triplet          三连音          [1/3 × 3]
+   *   eighth2sixteenth 前八后十六 ♪♬  [0.5, 0.25, 0.25]
+   *   sixteenth2eighth 前十六后八 ♬♪  [0.25, 0.25, 0.5]
+   *   syncopation      切分音      [0.25, 0.5, 0.25]（一拍内切分）
+   */
+  const RHYTHM_PATTERNS = {
+    quarter:          { label: '四分 ♩',         notes: [1] },
+    eighth:           { label: '八分 ♪♪',        notes: [0.5, 0.5] },
+    sixteenth:        { label: '十六分 ♬♬',    notes: [0.25, 0.25, 0.25, 0.25] },
+    triplet:          { label: '三连音',          notes: [1 / 3, 1 / 3, 1 / 3] },
+    eighth2sixteenth: { label: '前八后十六 ♪♬',  notes: [0.5, 0.25, 0.25] },
+    sixteenth2eighth: { label: '前十六后八 ♬♪',  notes: [0.25, 0.25, 0.5] },
+    syncopation:      { label: '切分音 ',      notes: [0.25, 0.5, 0.25] }
+  };
+
+  /**
+   * 人声数拍文本
+   * voice-en：英文 one, two, three ...
+   * voice-zh：中文 一, 二, 三 ...
+   * 超过预置词表时回退为数字本身
+   */
+  const VOICE_WORDS = {
+    'voice-en': ['one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight',
+                 'nine', 'ten', 'eleven', 'twelve', 'thirteen', 'fourteen',
+                 'fifteen', 'sixteen'],
+    'voice-zh': ['一', '二', '三', '四', '五', '六', '七', '八',
+                 '九', '十', '十一', '十二', '十三', '十四', '十五', '十六']
+  };
+
+  /**
+   * AudioEngine - 基于 Web Audio API 的精确节拍调度
+   * 使用 lookahead scheduler 模式（25ms 提前调度）保证精度
+   */
+  class AudioEngine {
+    constructor() {
+      this.ctx = null;
+      this.isPlaying = false;
+      this.timer = null;
+      this._pollTimer = null;
+      this._liveGains = []; // 已调度声音的 gain 节点，用于停止时静音
+      this.lookahead = 25; // ms
+      this.scheduleAhead = 0.1; // s
+
+      // 当前配置
+      this.bpm = 120;
+      this.numerator = 4;
+      this.denominator = 4;
+      this.rhythm = 'quarter'; // RHYTHM_PATTERNS 的 key
+      this.sound = 'click';
+      this.volume = 80; // 0-100
+      this.muted = false;
+
+      // 播放状态
+      this.currentBeat = 0;    // 当前小节内的拍位 (0-based)
+      this.currentSubBeat = 0; // 当前拍内的音符序号 (0-based)
+      this.measureCount = 0;   // 已播放小节数
+      this.startTime = 0;      // 启动时刻
+      this.nextBeatTime = 0;   // 下一拍的 audio 时刻
+
+      // 到时回调队列（由 pollState 派发）
+      this._pendingCallbacks = [];
+      this._pendingMeasures = [];
+      this._pendingSpeech = [];
+      // 人声缓存与预热（降低 TTS 延迟）
+      this._voiceCache = null;
+      this._voicesBound = false;
+
+      // 回调
+      this.onBeat = null; // (info) => {}  info: {beat, subBeat, subCount, measure, audioTime, isAccent}
+      this.onMeasure = null;
+    }
+
+    _ensureCtx() {
+      if (!this.ctx) {
+        const Ctor = window.AudioContext || window.webkitAudioContext;
+        this.ctx = new Ctor();
+      }
+      if (this.ctx.state === 'suspended') this.ctx.resume();
+    }
+
+    setBPM(v) { this.bpm = Math.max(40, Math.min(240, v|0)); }
+    setSignature(n, d) { this.numerator = Math.max(1, Math.min(16, n|0)); this.denominator = d; }
+    setRhythm(r) { if (RHYTHM_PATTERNS[r]) this.rhythm = r; }
+    setSound(s) {
+      if (SOUNDS[s] || VOICE_WORDS[s]) {
+        this.sound = s;
+        if (VOICE_WORDS[s]) this._ensureVoices();
+      }
+    }
+    setVolume(v) { this.volume = Math.max(0, Math.min(100, v|0)); }
+    setMuted(m) {
+      this.muted = !!m;
+      if (m && window.speechSynthesis) window.speechSynthesis.cancel();
+    }
+
+    get pattern() { return RHYTHM_PATTERNS[this.rhythm]; }
+
+    /**
+     * 单拍时长（秒）= 60 / BPM * (4 / denominator)
+     * 例如 4/4 拍 120BPM -> 0.5s/拍
+     *      6/8 拍 120BPM -> 0.25s/拍（八分音符为一拍）
+     */
+    get beatDuration() {
+      return 60 / this.bpm * (4 / this.denominator);
+    }
+
+    /**
+     * 小节时长 = 拍时长 × 拍数
+     */
+    get measureDuration() {
+      return this.beatDuration * this.numerator;
+    }
+
+    start() {
+      this._ensureCtx();
+      if (this.isPlaying) return;
+      this.isPlaying = true;
+      this.currentBeat = 0;
+      this.currentSubBeat = 0;
+      this.measureCount = 0;
+      this._pendingCallbacks = [];
+      this._pendingMeasures = [];
+      this._pendingSpeech = [];
+      this._cutAllSounds();
+      this.startTime = this.ctx.currentTime;
+      this.nextBeatTime = this.ctx.currentTime + 0.08;
+      // 预热 TTS 引擎（人声模式：首次 speak 延迟最高）
+      if (VOICE_WORDS[this.sound]) this._warmupSpeech();
+      this._scheduler();
+      // 回调派发定时器：不依赖 rAF（页面不可见/无焦点时 rAF 会被冻结），
+      // 保证人声数拍、拍点与小节回调在后台仍按时触发
+      if (this._pollTimer) clearInterval(this._pollTimer);
+      this._pollTimer = setInterval(() => this.pollState(), 25);
+    }
+
+    /**
+     * 停止播放。
+     * @param {number} [flushFrom] 切断该音频时钟时刻及之后的已调度声音
+     *        （歌曲/段落边界传入边界时刻，可切掉边界上多余的一拍）
+     */
+    stop(flushFrom) {
+      this.isPlaying = false;
+      if (this.timer) { clearTimeout(this.timer); this.timer = null; }
+      if (this._pollTimer) { clearInterval(this._pollTimer); this._pollTimer = null; }
+      // 立即断开边界之后（含手动停止时的未来时刻）预调度的节拍
+      // 注意：首次播放前 ctx 尚未创建，不能直接求 this.ctx.currentTime
+      const from = flushFrom != null ? flushFrom : (this.ctx ? this.ctx.currentTime : 0);
+      this._cutSoundsFrom(from);
+      this.currentBeat = 0;
+      this.currentSubBeat = 0;
+      this.measureCount = 0;
+      this._pendingCallbacks = [];
+      this._pendingMeasures = [];
+      this._pendingSpeech = [];
+      if (window.speechSynthesis) window.speechSynthesis.cancel();
+    }
+
+    pause() {
+      this.isPlaying = false;
+      if (this.timer) { clearTimeout(this.timer); this.timer = null; }
+      if (this._pollTimer) { clearInterval(this._pollTimer); this._pollTimer = null; }
+      this._cutSoundsFrom(this.ctx.currentTime);
+      if (window.speechSynthesis) window.speechSynthesis.cancel();
+    }
+
+    /**
+     * 在小节边界时刻立即切换配置（BPM/拍号/节奏型/音色）：
+     * 切断以旧配置预调度的声音与回调，把调度游标重置回边界，
+     * 由调度器用新配置重新调度整个小节，避免边界多响旧配置的一拍。
+     */
+    reconfigureAt(boundaryTime, cfg) {
+      cfg = cfg || {};
+      const t = boundaryTime != null ? boundaryTime : this.ctx.currentTime;
+      // 1) 切断边界及之后发声的声音
+      this._cutSoundsFrom(t);
+      // 2) 移除旧配置生成的视觉/人声回调（边界整拍重新调度后会重新入队）
+      this._pendingCallbacks = this._pendingCallbacks.filter(cb => cb.time < t - 1e-3);
+      this._pendingSpeech = this._pendingSpeech.filter(s => s.time < t - 1e-3);
+      // 3) 应用新配置
+      if (cfg.bpm) this.setBPM(cfg.bpm);
+      if (cfg.signature) {
+        const parts = String(cfg.signature).split('/').map(Number);
+        if (parts[0] && parts[1]) this.setSignature(parts[0], parts[1]);
+      }
+      if (cfg.rhythm) this.setRhythm(cfg.rhythm);
+      if (cfg.sound) this.setSound(cfg.sound);
+      // 4) 游标回到边界、拍号归零，measureCount 保持不变（小节末尾由调度器自然 +1）
+      this.nextBeatTime = t;
+      this.currentBeat = 0;
+      this.currentSubBeat = 0;
+    }
+
+    /**
+     * 调度器：以"拍"为单位，在 lookahead 内提前调度整拍
+     */
+    _scheduler() {
+      if (!this.isPlaying) return;
+      const ctxTime = this.ctx.currentTime;
+      while (this.nextBeatTime < ctxTime + this.scheduleAhead) {
+        this._scheduleBeat(this.nextBeatTime);
+        // 推进到下一拍
+        this.nextBeatTime += this.beatDuration;
+        this.currentBeat++;
+        if (this.currentBeat >= this.numerator) {
+          this.currentBeat = 0;
+          this.measureCount++;
+          this._pendingMeasures.push({ time: this.nextBeatTime, measure: this.measureCount });
+        }
+      }
+      this.timer = setTimeout(() => this._scheduler(), this.lookahead);
+    }
+
+    /**
+     * 调度一拍内的所有音符（按 pattern.notes 时值比例）
+     */
+    _scheduleBeat(beatTime) {
+      const notes = this.pattern.notes;
+      const isVoice = !!VOICE_WORDS[this.sound];
+      let offset = 0;
+      notes.forEach((dur, i) => {
+        const t = beatTime + offset * this.beatDuration;
+        const isAccent = this.currentBeat === 0 && i === 0;
+        if (!this.muted) {
+          if (isVoice) {
+            // 人声：拍点数拍（one/two/... 或 一/二/...），子拍用轻 click 补位
+            if (i === 0) {
+              this._pendingSpeech.push({ time: t, beat: this.currentBeat, accent: isAccent });
+              // 叠加极轻 click 锚定精确节拍（人声 TTS 有延迟，click 保证拍点清晰）
+              this._triggerSound(t, false, (this.volume / 100) * 0.12, 'click');
+            } else {
+              // 子拍用轻 click 补位（人声模式下强制 click 音色）
+              this._triggerSound(t, false, (this.volume / 100) * 0.4, 'click');
+            }
+          } else {
+            this._triggerSound(t, this.currentBeat === 0, this.volume / 100);
+          }
+        }
+        this._pendingCallbacks.push({
+          time: t,
+          info: {
+            beat: this.currentBeat,
+            subBeat: i,
+            subCount: notes.length,
+            measure: this.measureCount,
+            audioTime: t,
+            isAccent
+          }
+        });
+        offset += dur;
+      });
+    }
+
+    /**
+     * 预加载人声声音列表（voiceschanged 事件后缓存，避免每次查找）
+     */
+    _ensureVoices() {
+      if (!window.speechSynthesis) return;
+      this._refreshVoices();
+      if (!this._voicesBound && 'onvoiceschanged' in window.speechSynthesis) {
+        window.speechSynthesis.onvoiceschanged = () => this._refreshVoices();
+        this._voicesBound = true;
+      }
+    }
+
+    _refreshVoices() {
+      if (!window.speechSynthesis.getVoices) return;
+      const voices = window.speechSynthesis.getVoices();
+      if (!voices.length) return;
+      this._voiceCache = {
+        'zh-CN': voices.find(v => v.lang && v.lang.toLowerCase().startsWith('zh')),
+        'en-US': voices.find(v => v.lang && v.lang.toLowerCase().startsWith('en'))
+      };
+    }
+
+    /**
+     * 预热 TTS 引擎：仅触发声音列表加载与 resume。
+     * 注意：不要在首条 utterance 尚未播完时 speak/cancel——
+     * Chrome 在初始化阶段被 cancel 会导致合成器永久静默（当次会话）。
+     */
+    _warmupSpeech() {
+      if (!window.speechSynthesis) return;
+      this._ensureVoices();
+      try { window.speechSynthesis.resume(); } catch (e) {}
+    }
+
+    /**
+     * 人声数拍：通过 Web Speech API 朗读拍号
+     * speechSynthesis 无法走音频时钟精确调度，因此在 pollState 中
+     * 提前 LEAD 秒触发，抵消合成启动延迟
+     */
+    _speakBeat(beatIndex, accent) {
+      const synth = window.speechSynthesis;
+      if (!synth) return;
+      this._ensureVoices();
+      const words = VOICE_WORDS[this.sound];
+      const text = words[beatIndex] || String(beatIndex + 1);
+      const u = new SpeechSynthesisUtterance(text);
+      u.lang = this.sound === 'voice-zh' ? 'zh-CN' : 'en-US';
+      u.rate = 1.2;
+      u.pitch = accent ? 1.2 : 1.0;
+      u.volume = Math.max(0, Math.min(1, this.volume / 100));
+      // 使用缓存的声音，避免每次查找
+      if (this._voiceCache) {
+        const v = this.sound === 'voice-zh' ? this._voiceCache['zh-CN'] : this._voiceCache['en-US'];
+        if (v) u.voice = v;
+      }
+      // Chrome 已知缺陷：cancel() 后同步 speak() 会被静默丢弃。
+      // 因此需要清队列时先 cancel，再延后一帧 speak；队列空闲时直接 speak。
+      if (synth.speaking || synth.pending) {
+        try { synth.cancel(); } catch (e) {}
+        // Chrome 要求 cancel 后让出一个事件循环再 speak，否则新语音被丢弃
+        setTimeout(() => { try { synth.resume(); synth.speak(u); } catch (e) {} }, 60);
+      } else {
+        try { synth.resume(); synth.speak(u); } catch (e) {}
+      }
+    }
+
+    _triggerSound(time, accent, volScale, soundOverride) {
+      // 用自定义 gain 包装以应用全局音量
+      const masterGain = this.ctx.createGain();
+      masterGain.gain.value = volScale;
+      masterGain.connect(this.ctx.destination);
+      // 记录已调度声音，停止时可立即断开（消除 lookahead 预调度的多余节拍）
+      this._liveGains.push({ node: masterGain, start: time, until: time + 0.3 });
+      // 根据音色合成对应声音，统一输出到 masterGain
+      this._playWithGain(time, accent, masterGain, soundOverride || this.sound);
+    }
+
+    /** 断开并清空所有已调度声音（开始新播放时调用） */
+    _cutAllSounds() {
+      if (!this._liveGains) return;
+      for (const item of this._liveGains) {
+        try { item.node.disconnect(); } catch (e) {}
+      }
+      this._liveGains = [];
+    }
+
+    /**
+     * 切断在 boundary 及之后发声的已调度声音（小节/段落边界处调用）。
+     * boundary 之前已经发声的节拍保留尾音自然衰减。
+     */
+    _cutSoundsFrom(boundary, eps) {
+      if (!this._liveGains || !this.ctx) return;
+      const now = this.ctx.currentTime;
+      const t = boundary != null ? boundary : now;
+      const e = eps != null ? eps : 0.02; // 轮询粒度内已起振的边界拍也要切掉
+      this._liveGains = this._liveGains.filter(item => {
+        if (item.until <= now) return false;           // 已播完，丢弃引用
+        if (item.start >= t - e) {
+          try { item.node.disconnect(); } catch (err) {}
+          return false;
+        }
+        return true;
+      });
+    }
+
+    _playWithGain(time, accent, outputNode, sound) {
+      // 根据音色合成对应声音，统一输出到 outputNode
+      switch (sound) {
+        case 'click': this._sClick(time, accent, outputNode); break;
+        case 'clave': this._sClave(time, accent, outputNode); break;
+        case 'kick': this._sKick(time, accent, outputNode); break;
+        case 'snare': this._sSnare(time, accent, outputNode); break;
+        case 'clap': this._sClap(time, accent, outputNode); break;
+        case 'sine': this._sWave(time, 'sine', accent, outputNode); break;
+        case 'square': this._sWave(time, 'square', accent, outputNode); break;
+        case 'triangle': this._sWave(time, 'triangle', accent, outputNode); break;
+      }
+    }
+
+    _sClick(t, accent, out) {
+      const osc = this.ctx.createOscillator(); const g = this.ctx.createGain();
+      osc.type = 'square'; osc.frequency.setValueAtTime(accent ? 1500 : 1000, t);
+      g.gain.setValueAtTime(accent ? 0.6 : 0.3, t);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 0.02);
+      osc.connect(g).connect(out); osc.start(t); osc.stop(t + 0.03);
+    }
+    _sClave(t, accent, out) {
+      const osc = this.ctx.createOscillator(); const g = this.ctx.createGain();
+      osc.type = 'sine'; osc.frequency.setValueAtTime(accent ? 2500 : 1800, t);
+      g.gain.setValueAtTime(accent ? 0.5 : 0.25, t);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 0.05);
+      osc.connect(g).connect(out); osc.start(t); osc.stop(t + 0.06);
+    }
+    _sKick(t, accent, out) {
+      const osc = this.ctx.createOscillator(); const g = this.ctx.createGain();
+      osc.frequency.setValueAtTime(150, t);
+      osc.frequency.exponentialRampToValueAtTime(50, t + 0.1);
+      g.gain.setValueAtTime(accent ? 0.8 : 0.5, t);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 0.2);
+      osc.connect(g).connect(out); osc.start(t); osc.stop(t + 0.25);
+    }
+    _sSnare(t, accent, out) {
+      const size = this.ctx.sampleRate * 0.2;
+      const buf = this.ctx.createBuffer(1, size, this.ctx.sampleRate);
+      const d = buf.getChannelData(0);
+      for (let i = 0; i < size; i++) d[i] = Math.random() * 2 - 1;
+      const n = this.ctx.createBufferSource(); n.buffer = buf;
+      const f = this.ctx.createBiquadFilter(); f.type = 'highpass'; f.frequency.value = 1000;
+      const g = this.ctx.createGain();
+      g.gain.setValueAtTime(accent ? 0.5 : 0.3, t);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
+      n.connect(f).connect(g).connect(out); n.start(t); n.stop(t + 0.15);
+      const osc = this.ctx.createOscillator(); const g2 = this.ctx.createGain();
+      osc.type = 'triangle'; osc.frequency.value = 200;
+      g2.gain.setValueAtTime(accent ? 0.4 : 0.2, t);
+      g2.gain.exponentialRampToValueAtTime(0.001, t + 0.1);
+      osc.connect(g2).connect(out); osc.start(t); osc.stop(t + 0.12);
+    }
+    _sClap(t, accent, out) {
+      const vol = accent ? 0.6 : 0.35;
+      [0, 0.01, 0.02].forEach(off => {
+        const size = this.ctx.sampleRate * 0.05;
+        const buf = this.ctx.createBuffer(1, size, this.ctx.sampleRate);
+        const d = buf.getChannelData(0);
+        for (let i = 0; i < size; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / size);
+        const s = this.ctx.createBufferSource(); s.buffer = buf;
+        const f = this.ctx.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 1200; f.Q.value = 2;
+        const g = this.ctx.createGain();
+        g.gain.setValueAtTime(vol, t + off);
+        g.gain.exponentialRampToValueAtTime(0.001, t + off + 0.08);
+        s.connect(f).connect(g).connect(out);
+        s.start(t + off); s.stop(t + off + 0.08);
+      });
+    }
+    _sWave(t, type, accent, out) {
+      const osc = this.ctx.createOscillator(); const g = this.ctx.createGain();
+      osc.type = type; osc.frequency.setValueAtTime(accent ? 880 : 660, t);
+      g.gain.setValueAtTime(accent ? 0.3 : 0.15, t);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 0.06);
+      osc.connect(g).connect(out); osc.start(t); osc.stop(t + 0.07);
+    }
+
+    /**
+     * 由外部 rAF 调用：派发到时的拍点/小节回调，提前触发人声
+     */
+    pollState() {
+      if (!this.ctx) return null;
+      const now = this.ctx.currentTime;
+      const SPEECH_LEAD = 0.14; // 人声提前触发量，抵消 TTS 启动延迟（含清队列时 60ms 延后）
+      // 人声：提前 SPEECH_LEAD 触发
+      while (this._pendingSpeech.length && this._pendingSpeech[0].time <= now + SPEECH_LEAD) {
+        const s = this._pendingSpeech.shift();
+        // 若已严重过时（停止/卡顿），跳过避免堆积
+        if (s.time >= now - 0.2) this._speakBeat(s.beat, s.accent);
+      }
+      // 拍点回调（与音频时刻对齐）
+      while (this._pendingCallbacks.length && this._pendingCallbacks[0].time <= now + 0.005) {
+        const cb = this._pendingCallbacks.shift();
+        this.currentSubBeat = cb.info.subBeat;
+        if (this.onBeat) this.onBeat(cb.info);
+      }
+      while (this._pendingMeasures.length && this._pendingMeasures[0].time <= now + 0.005) {
+        const m = this._pendingMeasures.shift();
+        if (this.onMeasure) this.onMeasure(m);
+      }
+      return {
+        isPlaying: this.isPlaying,
+        currentBeat: this.currentBeat,
+        currentSubBeat: this.currentSubBeat,
+        measure: this.measureCount,
+        bpm: this.bpm,
+        runtime: this.isPlaying ? (now - this.startTime) : 0
+      };
+    }
+  }
+
+  AudioEngine.RHYTHMS = RHYTHM_PATTERNS;
+  AudioEngine.SOUNDS = Object.keys(SOUNDS).concat(Object.keys(VOICE_WORDS));
+  AudioEngine.VOICE_WORDS = VOICE_WORDS;
+  global.AudioEngine = AudioEngine;
+})(window);
+
+</script>
+  <script>
+// visualizer.js - 圆形节拍可视化
+(function (global) {
+  'use strict';
+
+  /**
+   * Visualizer - Canvas 圆形节拍可视化
+   * - N 个圆代表 N 拍（拍号分子）
+   * - 每个圆内按节奏型音符时值比例分块（如前八后十六 = 1/2 + 1/4 + 1/4）
+   * - 当前播放的圆放大高亮，圆内子块按顺序点亮
+   */
+  class Visualizer {
+    constructor(canvas) {
+      this.canvas = canvas;
+      this.ctx = canvas.getContext('2d');
+      this.dpr = window.devicePixelRatio || 1;
+      this.resize();
+
+      // 状态
+      this.numerator = 4;
+      this.notes = [1]; // 一拍内各音符时值（拍），总和 1
+      this.currentBeat = -1;
+      this.currentSubBeat = -1;
+      this.isPlaying = false;
+      // 触发脉冲时间戳，用于动画
+      this.pulses = []; // [{beat, subBeat, t}]
+      this.lastFrame = 0;
+
+      // 主题色（与 CSS 变量对应）
+      this._readTheme();
+
+      window.addEventListener('resize', () => this.resize());
+      this._rafId = null;
+      this._start();
+    }
+
+    _readTheme() {
+      const cs = getComputedStyle(document.documentElement);
+      this.colorBg = cs.getPropertyValue('--bg-elev').trim() || '#181b22';
+      this.colorAccent = cs.getPropertyValue('--accent').trim() || '#4dd0e1';
+      this.colorAccentStrong = cs.getPropertyValue('--accent-strong').trim() || '#26c6da';
+      this.colorWarm = cs.getPropertyValue('--accent-warm').trim() || '#ffb74d';
+      this.colorDim = cs.getPropertyValue('--bg-elev-2').trim() || '#1f2330';
+      this.colorBorder = cs.getPropertyValue('--border').trim() || '#2a2f3a';
+      this.colorText = cs.getPropertyValue('--text').trim() || '#e6e8ee';
+      this.colorTextDim = cs.getPropertyValue('--text-dim').trim() || '#5b6070';
+    }
+
+    refreshTheme() { this._readTheme(); }
+
+    resize() {
+      const rect = this.canvas.getBoundingClientRect();
+      this.canvas.width = Math.max(1, rect.width * this.dpr);
+      this.canvas.height = Math.max(1, rect.height * this.dpr);
+      this.ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+      this._w = rect.width;
+      this._h = rect.height;
+    }
+
+    setSignature(numerator) { this.numerator = Math.max(1, numerator|0); }
+    /** notes: 一拍内各音符时值数组，如 [0.5, 0.25, 0.25] */
+    setPattern(notes) {
+      if (Array.isArray(notes) && notes.length) this.notes = notes.slice();
+    }
+    setPlaying(p) { this.isPlaying = !!p; if (!p) { this.currentBeat = -1; this.currentSubBeat = -1; } }
+
+    /**
+     * 触发一拍的脉冲动画
+     */
+    pulse(beat, subBeat, isAccent) {
+      this.currentBeat = beat;
+      this.currentSubBeat = subBeat;
+      this.pulses.push({ beat, subBeat, t: performance.now(), isAccent });
+      // 保留最近 6 个脉冲
+      if (this.pulses.length > 6) this.pulses.shift();
+    }
+
+    _start() {
+      const loop = (now) => {
+        this._draw(now);
+        this._rafId = requestAnimationFrame(loop);
+      };
+      this._rafId = requestAnimationFrame(loop);
+    }
+
+    stop() {
+      if (this._rafId) cancelAnimationFrame(this._rafId);
+    }
+
+    _draw(now) {
+      const ctx = this.ctx;
+      const w = this._w, h = this._h;
+      ctx.clearRect(0, 0, w, h);
+
+      // 清理过期脉冲（>500ms）
+      this.pulses = this.pulses.filter(p => now - p.t < 500);
+
+      // 计算 N 个圆的布局
+      const n = this.numerator;
+      // 圆直径 = min(可用宽 / N, 高 / 2)
+      const padding = 20;
+      const availW = w - padding * 2;
+      const availH = h - padding * 2;
+      const maxDiameter = Math.min(availW / n, availH);
+      const diameter = Math.max(20, maxDiameter - 10);
+      const radius = diameter / 2;
+      const gap = (availW - diameter * n) / Math.max(1, n - 1);
+      const startY = h / 2;
+
+      for (let i = 0; i < n; i++) {
+        const cx = padding + radius + i * (diameter + (n > 1 ? gap : 0));
+        const cy = startY;
+        const isCurrent = this.isPlaying && this.currentBeat === i;
+        const isAccentBeat = i === 0; // 第一拍为强拍
+        // 找到最新的脉冲（如果有）
+        const pulseForThis = this.pulses.filter(p => p.beat === i).slice(-1)[0];
+        const pulseAge = pulseForThis ? (now - pulseForThis.t) : 999;
+        const pulseScale = pulseAge < 200 ? 1 + 0.15 * (1 - pulseAge / 200) : 1;
+
+        const r = radius * pulseScale;
+        // 外圈光晕（强拍更明显）
+        if (isCurrent || pulseForThis) {
+          const glowAlpha = pulseAge < 300 ? 0.4 * (1 - pulseAge / 300) : 0;
+          if (glowAlpha > 0) {
+            ctx.beginPath();
+            ctx.arc(cx, cy, r + 10, 0, Math.PI * 2);
+            ctx.fillStyle = this._rgba(isAccentBeat ? this.colorWarm : this.colorAccent, glowAlpha);
+            ctx.fill();
+          }
+        }
+
+        // 圆背景
+        ctx.beginPath();
+        ctx.arc(cx, cy, r, 0, Math.PI * 2);
+        ctx.fillStyle = this.colorDim;
+        ctx.fill();
+        ctx.lineWidth = isCurrent ? 2.5 : 1;
+        ctx.strokeStyle = isCurrent ? this.colorAccent : this.colorBorder;
+        ctx.stroke();
+
+        // 圆内分块：按音符时值比例划分扇形（顺时针，自 12 点方向起）
+        const notes = this.notes;
+        const divs = notes.length;
+        const startAngle = -Math.PI / 2;
+        let acc = 0;
+        for (let j = 0; j < divs; j++) {
+          const a0 = startAngle + acc * Math.PI * 2;
+          acc += notes[j];
+          const a1 = startAngle + acc * Math.PI * 2;
+          const isCurrentSub = isCurrent && this.currentSubBeat === j;
+          // 已播放过的子块也高亮一会
+          const subPulse = this.pulses.filter(p => p.beat === i && p.subBeat === j).slice(-1)[0];
+          const subAge = subPulse ? now - subPulse.t : 999;
+
+          ctx.beginPath();
+          ctx.moveTo(cx, cy);
+          ctx.arc(cx, cy, r - 4, a0, a1);
+          ctx.closePath();
+          if (isCurrentSub) {
+            const a = subAge < 200 ? 1 - subAge / 400 : 1;
+            ctx.fillStyle = isAccentBeat ? this.colorWarm : this.colorAccent;
+            ctx.globalAlpha = Math.max(0.3, a);
+          } else if (subAge < 400) {
+            ctx.fillStyle = isAccentBeat ? this.colorWarm : this.colorAccent;
+            ctx.globalAlpha = 0.4 * (1 - subAge / 400);
+          } else {
+            ctx.fillStyle = this._rgba(this.colorText, 0.04);
+            ctx.globalAlpha = 1;
+          }
+          ctx.fill();
+          ctx.globalAlpha = 1;
+          // 分块线（单块时不画）
+          if (divs > 1) {
+            ctx.beginPath();
+            ctx.moveTo(cx, cy);
+            ctx.lineTo(cx + Math.cos(a0) * (r - 4), cy + Math.sin(a0) * (r - 4));
+            ctx.strokeStyle = this.colorBorder;
+            ctx.lineWidth = 1;
+            ctx.stroke();
+          }
+        }
+
+        // 拍号标签
+        ctx.fillStyle = isCurrent ? this.colorText : this.colorTextDim;
+        ctx.font = `${isCurrent ? 'bold' : ''} ${Math.max(10, r * 0.32)}px sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(String(i + 1), cx, cy);
+      }
+
+      // 摆锤（可选）：根据 BPM 节拍周期摆动；小屏隐藏避免在留白区形成游离点
+      if (this.isPlaying && this.bpm && w > 560) {
+        // 简单摆锤指示，沿底部摆动
+        const period = 60 / this.bpm * 2; // 半周期
+        const phase = ((now / 1000) % period) / period;
+        const pendX = padding + phase * availW;
+        const pendY = h - 8;
+        ctx.beginPath();
+        ctx.arc(pendX, pendY, 3, 0, Math.PI * 2);
+        ctx.fillStyle = this.colorAccent;
+        ctx.fill();
+      }
+    }
+
+    _rgba(color, alpha) {
+      // 支持 #hex 和 rgb()
+      if (color.startsWith('#')) {
+        const hex = color.slice(1);
+        const r = parseInt(hex.slice(0, 2), 16);
+        const g = parseInt(hex.slice(2, 4), 16);
+        const b = parseInt(hex.slice(4, 6), 16);
+        return `rgba(${r},${g},${b},${alpha})`;
+      }
+      // 假设是 rgb(r,g,b)
+      return color.replace('rgb(', 'rgba(').replace(')', `,${alpha})`);
+    }
+
+    setBPM(bpm) { this.bpm = bpm; }
+  }
+
+  global.Visualizer = Visualizer;
+})(window);
+
+</script>
+  <script>
+// practice.js - 练习模式
+(function (global) {
+  'use strict';
+
+  /**
+   * PracticeManager - 练习方案管理
+   * 方案参数：
+   *   { id, name, startBPM, targetBPM, stepBPM, triggerType:'time'|'measure',
+   *     interval: number (分钟或小节), signature, rhythm, sound,
+   *     endAction: 'stop'|'loop'|'hold' }
+   */
+  class PracticeManager {
+    constructor(audioEngine) {
+      this.engine = audioEngine;
+      this.plans = Storage.loadPractice();
+      this.activePlanId = null;
+      this.running = false;
+      this.currentBPM = 0;
+      this.startRealTime = 0;
+      this.lastIncrementTime = 0; // 上次递增时刻（用于时间触发）
+      this.measureAtLast = 0;     // 上次递增时的小节数
+      this.pendingMeasures = 0;   // 自上次递增起累计的小节数
+
+      // 回调
+      this.onUpdate = null; // (state) => {}
+      this.onFinish = null;
+    }
+
+    save() { Storage.savePractice(this.plans); }
+
+    list() { return this.plans; }
+
+    add(plan) {
+      plan.id = 'p_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+      this.plans.push(plan);
+      this.save();
+      return plan;
+    }
+
+    update(id, patch) {
+      const i = this.plans.findIndex(p => p.id === id);
+      if (i >= 0) {
+        this.plans[i] = Object.assign({}, this.plans[i], patch);
+        this.save();
+        return this.plans[i];
+      }
+      return null;
+    }
+
+    remove(id) {
+      this.plans = this.plans.filter(p => p.id !== id);
+      this.save();
+    }
+
+    get(id) { return this.plans.find(p => p.id === id); }
+
+    start(planId) {
+      const plan = this.get(planId);
+      if (!plan) return false;
+      this.activePlanId = planId;
+      this.running = true;
+      this.currentBPM = plan.startBPM;
+      this.startRealTime = performance.now();
+      this.lastIncrementTime = this.startRealTime;
+      this.measureAtLast = 0;
+      this.pendingMeasures = 0;
+
+      // 应用方案参数到引擎
+      this.engine.setBPM(plan.startBPM);
+      if (plan.signature) {
+        const [n, d] = plan.signature.split('/').map(Number);
+        this.engine.setSignature(n, d);
+      }
+      if (plan.rhythm) this.engine.setRhythm(plan.rhythm);
+      if (plan.sound) this.engine.setSound(plan.sound);
+
+      this._notify();
+      return true;
+    }
+
+    stop() {
+      this.running = false;
+      this.activePlanId = null;
+      this._notify();
+    }
+
+    /**
+     * 由 app 在 onMeasure 回调中调用，按小节计数递增
+     * @param {{time:number}} m 小节边界的音频时钟时刻
+     */
+    onMeasure(m) {
+      if (!this.running) return;
+      const plan = this.get(this.activePlanId);
+      if (!plan) return;
+      if (plan.triggerType === 'measure') {
+        this.pendingMeasures++;
+        if (this.pendingMeasures >= plan.interval) {
+          this._increment(plan, m && m.time);
+        }
+      }
+    }
+
+    /**
+     * 由 app 在 rAF 中调用，处理时间触发
+     */
+    tick() {
+      if (!this.running) return;
+      const plan = this.get(this.activePlanId);
+      if (!plan) return;
+      if (plan.triggerType === 'time') {
+        const now = performance.now();
+        const elapsed = (now - this.lastIncrementTime) / 1000; // s
+        if (elapsed >= plan.interval * 60) {
+          this._increment(plan);
+        }
+      }
+    }
+
+    _increment(plan, boundaryTime) {
+      const next = this.currentBPM + plan.stepBPM;
+      // 检查是否到达目标
+      if (plan.targetBPM && next > plan.targetBPM) {
+        // 到达目标
+        if (plan.endAction === 'stop') {
+          this.running = false;
+          if (this.onFinish) this.onFinish('reached');
+          this._notify();
+          return;
+        } else if (plan.endAction === 'loop') {
+          this.currentBPM = plan.startBPM;
+        } else { // hold
+          this.currentBPM = plan.targetBPM;
+        }
+      } else {
+        this.currentBPM = next;
+        if (plan.targetBPM && this.currentBPM >= plan.targetBPM) {
+          // 刚好到达
+          if (plan.endAction === 'stop') {
+            this.engine.setBPM(plan.targetBPM);
+            this.running = false;
+            if (this.onFinish) this.onFinish('reached');
+            this._notify();
+            return;
+          } else if (plan.endAction === 'loop') {
+            this.currentBPM = plan.startBPM;
+          } else {
+            this.currentBPM = plan.targetBPM;
+          }
+        }
+      }
+      // 小节触发：在边界无缝切换 BPM（切断旧速度预调度拍并重排）；
+      // 时间触发（boundaryTime 为空）：直接设置即可
+      if (boundaryTime != null) {
+        this.engine.reconfigureAt(boundaryTime, { bpm: this.currentBPM });
+      } else {
+        this.engine.setBPM(this.currentBPM);
+      }
+      this.lastIncrementTime = performance.now();
+      this.pendingMeasures = 0;
+      this._notify();
+    }
+
+    _notify() {
+      if (!this.onUpdate) return;
+      const plan = this.get(this.activePlanId);
+      const state = {
+        running: this.running,
+        planName: plan ? plan.name : '-',
+        currentBPM: this.currentBPM || (plan ? plan.startBPM : 0),
+        targetBPM: plan ? plan.targetBPM : 0,
+        startBPM: plan ? plan.startBPM : 0,
+        progress: plan && plan.targetBPM
+          ? Math.min(100, Math.max(0, ((this.currentBPM - plan.startBPM) / Math.max(1, plan.targetBPM - plan.startBPM)) * 100))
+          : 0,
+        remainText: this._remainText(plan)
+      };
+      this.onUpdate(state);
+    }
+
+    _remainText(plan) {
+      if (!plan || !this.running) return '-';
+      if (plan.triggerType === 'time') {
+        const elapsed = (performance.now() - this.lastIncrementTime) / 1000;
+        const remain = Math.max(0, plan.interval * 60 - elapsed);
+        const m = Math.floor(remain / 60);
+        const s = Math.floor(remain % 60);
+        return `${m}:${s.toString().padStart(2, '0')}`;
+      } else {
+        const remain = Math.max(0, plan.interval - this.pendingMeasures);
+        return `${remain} 小节`;
+      }
+    }
+  }
+
+  global.PracticeManager = PracticeManager;
+})(window);
+
+</script>
+  <script>
+// stage.js - 舞台模式
+(function (global) {
+  'use strict';
+
+  /**
+   * StageManager - 舞台歌曲管理
+   * 歌曲结构：
+   *   { id, name, artist, note, segments: [{ start, end, bpm, signature, rhythm, sound, note }] }
+   * - segments 中 start/end 为小节序号（1-based）
+   * - 未配置小节继承前一段参数
+   * - 双击列表项启动播放
+   * - 手动播放非队首歌曲时，自动将其提到第一顺序位
+   * - 播放完毕即停止，不自动连续播放下一首
+   */
+  class StageManager {
+    constructor(audioEngine) {
+      this.engine = audioEngine;
+      this.songs = Storage.loadSongs();
+      this.running = false;
+      this.currentSongIndex = -1; // 在队列中的位置
+      this.currentMeasure = 0;   // 当前歌曲内小节
+      this.currentSegmentIndex = 0;
+      this.pendingMeasures = 0;  // 当前段已播放小节数
+
+      this.onUpdate = null;
+      this.onSongChange = null;
+    }
+
+    save() { Storage.saveSongs(this.songs); }
+
+    list() { return this.songs; }
+
+    add(song) {
+      song.id = 's_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+      this.songs.push(song);
+      this.save();
+      return song;
+    }
+
+    update(id, patch) {
+      const i = this.songs.findIndex(s => s.id === id);
+      if (i >= 0) {
+        this.songs[i] = Object.assign({}, this.songs[i], patch);
+        this.save();
+        return this.songs[i];
+      }
+      return null;
+    }
+
+    remove(id) {
+      this.songs = this.songs.filter(s => s.id !== id);
+      this.save();
+    }
+
+    get(id) { return this.songs.find(s => s.id === id); }
+
+    /**
+     * 移动歌曲顺序
+     */
+    move(fromIndex, toIndex) {
+      if (fromIndex < 0 || fromIndex >= this.songs.length) return;
+      if (toIndex < 0 || toIndex >= this.songs.length) return;
+      const [item] = this.songs.splice(fromIndex, 1);
+      this.songs.splice(toIndex, 0, item);
+      this.save();
+    }
+
+    moveUp(index) {
+      if (index <= 0) return;
+      this.move(index, index - 1);
+    }
+
+    moveDown(index) {
+      if (index >= this.songs.length - 1) return;
+      this.move(index, index + 1);
+    }
+
+    /**
+     * 启动播放某首歌；若不在第一位，先把它提到第一顺序位
+     */
+    playAt(index) {
+      if (index < 0 || index >= this.songs.length) return false;
+      if (index !== 0) {
+        const [picked] = this.songs.splice(index, 1);
+        this.songs.unshift(picked);
+        this.save();
+        index = 0;
+      }
+      this.currentSongIndex = 0;
+      this.currentMeasure = 1;
+      this.currentSegmentIndex = 0;
+      this.pendingMeasures = 0;
+      this.running = true;
+      this._applySegment(this.songs[0], 0);
+      this._notify();
+      if (this.onSongChange) this.onSongChange(this.songs[0]);
+      return true;
+    }
+
+    stop() {
+      this.running = false;
+      this.currentSongIndex = -1;
+      this.currentMeasure = 0;
+      this._notify();
+    }
+
+    /**
+     * 由 app 在 onMeasure 回调中调用
+     * @param {{time:number}} m 边界信息，m.time 为该小节起始的音频时钟时刻
+     */
+    onMeasure(m) {
+      if (!this.running) return;
+      const song = this.songs[this.currentSongIndex];
+      if (!song) return;
+      const boundary = m && m.time;
+      this.currentMeasure++;
+      this.pendingMeasures++;
+      // 检查是否到达下一段
+      const segments = this._sortedSegments(song);
+      const next = segments[this.currentSegmentIndex + 1];
+      if (next && this.currentMeasure >= next.start) {
+        this.currentSegmentIndex++;
+        this.pendingMeasures = 0;
+        // 在边界时刻立即切换：切断旧配置预调度的一拍，并用新配置重排
+        this._applySegment(song, this.currentSegmentIndex, boundary);
+      }
+      // 检查是否到达歌曲末尾：停止播放（不自动连播），并将播完的歌曲移到列表末尾
+      const lastSeg = segments[segments.length - 1];
+      const lastMeasure = lastSeg ? lastSeg.end : 0;
+      if (this.currentMeasure > lastMeasure) {
+        const finishedIdx = this.currentSongIndex;
+        const finished = this.songs[finishedIdx];
+        this.running = false;
+        this.currentSongIndex = -1;
+        this.currentMeasure = 0;
+        if (finished) {
+          // 播完的歌曲移到列表末尾，但不自动播放下一首
+          this.songs.splice(finishedIdx, 1);
+          this.songs.push(finished);
+          this.save();
+        }
+        if (this.onSongChange) this.onSongChange(null);
+      }
+      this._notify();
+    }
+
+    /**
+     * 应用段落配置。
+     * @param {number} [boundaryTime] 传入小节边界时刻时做无缝重调度；
+     *        不传（如歌曲启动）则直接设置配置。
+     */
+    _applySegment(song, segIndex, boundaryTime) {
+      const segments = this._sortedSegments(song);
+      const seg = segments[segIndex];
+      if (!seg) return;
+      if (boundaryTime != null) {
+        this.engine.reconfigureAt(boundaryTime, {
+          bpm: seg.bpm, signature: seg.signature, rhythm: seg.rhythm, sound: seg.sound
+        });
+      } else {
+        if (seg.bpm) this.engine.setBPM(seg.bpm);
+        if (seg.signature) {
+          const [n, d] = seg.signature.split('/').map(Number);
+          this.engine.setSignature(n, d);
+        }
+        if (seg.rhythm) this.engine.setRhythm(seg.rhythm);
+        if (seg.sound) this.engine.setSound(seg.sound);
+      }
+    }
+
+    _sortedSegments(song) {
+      return (song.segments || []).slice().sort((a, b) => a.start - b.start);
+    }
+
+    /**
+     * 计算歌曲总小节数
+     */
+    totalMeasures(song) {
+      const segs = this._sortedSegments(song);
+      if (!segs.length) return 0;
+      return segs[segs.length - 1].end;
+    }
+
+    /**
+     * 获取起始 BPM（第一段）
+     */
+    startBPM(song) {
+      const segs = this._sortedSegments(song);
+      return segs.length ? segs[0].bpm : 0;
+    }
+
+    _notify() {
+      if (!this.onUpdate) return;
+      const song = this.currentSongIndex >= 0 ? this.songs[this.currentSongIndex] : null;
+      const nextSong = this.songs[this.currentSongIndex + 1] || null;
+      const total = song ? this.totalMeasures(song) : 0;
+      const state = {
+        running: this.running,
+        currentSong: song ? song.name : '-',
+        currentMeasure: song ? this.currentMeasure : 0,
+        totalMeasures: total,
+        nextSong: nextSong ? nextSong.name : '（无）',
+        queueLength: this.songs.length
+      };
+      this.onUpdate(state);
+    }
+  }
+
+  global.StageManager = StageManager;
+})(window);
+
+</script>
+  <script>
+// app.js - 主控制器
+(function () {
+  'use strict';
+
+  // ============ 元素引用 ============
+  const $ = (id) => document.getElementById(id);
+  const $$ = (sel) => document.querySelectorAll(sel);
+
+  const els = {
+    playBtn: $('play-btn'),
+    muteBtn: $('mute-btn'),
+    resetBtn: $('reset-btn'),
+    bpmInput: $('bpm-input'),
+    bpmSlider: $('bpm-slider'),
+    sigSelect: $('sig-select'),
+    rhythmSelect: $('rhythm-select'),
+    soundSelect: $('sound-select'),
+    volSlider: $('volume-slider'),
+    volValue: $('volume-value'),
+    canvas: $('viz-canvas'),
+    // 状态
+    statusBpm: $('status-bpm'),
+    statusSig: $('status-signature'),
+    statusRhythm: $('status-rhythm'),
+    statusSound: $('status-sound'),
+    statusMeasure: $('status-measure'),
+    vizMeta: $('viz-meta'),
+    // 运行信息（集成于可视化区）
+    statusBeat: $('status-beat'),
+    statusSubBeat: $('status-subbeat'),
+    statusMeasures: $('status-measures'),
+    statusRuntime: $('status-runtime'),
+    // 模式
+    modeBtns: $$('.mode-btn'),
+    panelViews: $$('.panel-view'),
+    sidePanel: $('side-panel'),
+    layout: document.querySelector('.layout'),
+    // 练习
+    addPractice: $('add-practice'),
+    practiceList: $('practice-list'),
+    practiceStatus: $('practice-status'),
+    psName: $('ps-name'),
+    psBpm: $('ps-bpm'),
+    psTarget: $('ps-target'),
+    psRemain: $('ps-remain'),
+    psProgress: $('ps-progress'),
+    // 舞台
+    addSong: $('add-song'),
+    songList: $('song-list'),
+    stageStatus: $('stage-status'),
+    ssCurrent: $('ss-current'),
+    ssMeasure: $('ss-measure'),
+    ssNext: $('ss-next'),
+    // 模态
+    modalMask: $('modal-mask'),
+    modalTitle: $('modal-title'),
+    modalBody: $('modal-body'),
+    modalOk: $('modal-ok'),
+    modalCancel: $('modal-cancel'),
+    modalClose: $('modal-close'),
+    themeToggle: $('theme-toggle')
+  };
+
+  // ============ 核心 ============
+  const engine = new AudioEngine();
+  const visualizer = new Visualizer(els.canvas);
+  const practice = new PracticeManager(engine);
+  const stage = new StageManager(engine);
+
+  let currentMode = 'basic'; // basic | practice | stage
+  let activePracticeId = null;
+  let activeSongIndex = -1;
+
+  // ============ 主题 ============
+  function initTheme() {
+    const theme = Storage.loadTheme();
+    document.documentElement.setAttribute('data-theme', theme);
+    visualizer.refreshTheme();
+  }
+  function toggleTheme() {
+    const cur = Storage.loadTheme();
+    const next = cur === 'dark' ? 'light' : 'dark';
+    Storage.saveTheme(next);
+    document.documentElement.setAttribute('data-theme', next);
+    visualizer.refreshTheme();
+  }
+  els.themeToggle.addEventListener('click', toggleTheme);
+
+  // ============ 状态同步 ============
+  const RHYTHM_LABELS = Object.fromEntries(
+    Object.entries(AudioEngine.RHYTHMS).map(([k, v]) => [k, v.label])
+  );
+  const SOUND_LABELS = {
+    click: 'Click 滴答', clave: 'Clave 响板', kick: 'Kick 底鼓', snare: 'Snare 军鼓',
+    clap: 'Clap 拍手', sine: 'Sine 正弦', square: 'Square 方波', triangle: 'Triangle 三角',
+    'voice-en': '人声 one', 'voice-zh': '人声 1'
+  };
+
+  // 构造下拉选项
+  const rhythmOptions = (sel) => Object.entries(AudioEngine.RHYTHMS).map(([k, v]) =>
+    `<option value="${k}" ${sel === k ? 'selected' : ''}>${v.label}</option>`).join('');
+  const RHYTHM_SHORT = {
+    quarter: '四分', eighth: '八分', sixteenth: '十六分', triplet: '三连',
+    eighth2sixteenth: '前八后十六', sixteenth2eighth: '前十六后八', syncopation: '切分'
+  };
+  const rhythmOptionsShort = (sel) => Object.keys(AudioEngine.RHYTHMS).map(k =>
+    `<option value="${k}" ${sel === k ? 'selected' : ''}>${RHYTHM_SHORT[k]}</option>`).join('');
+  const soundOptions = (sel) => AudioEngine.SOUNDS.map(s =>
+    `<option value="${s}" ${sel === s ? 'selected' : ''}>${SOUND_LABELS[s] || s}</option>`).join('');
+
+  function applyConfigToEngine() {
+    engine.setBPM(parseInt(els.bpmInput.value, 10));
+    const [sigN, sigD] = els.sigSelect.value.split('/').map(Number);
+    engine.setSignature(sigN, sigD);
+    engine.setRhythm(els.rhythmSelect.value || 'quarter');
+    engine.setSound(els.soundSelect.value);
+    engine.setVolume(parseInt(els.volSlider.value, 10));
+    visualizer.setBPM(engine.bpm);
+    visualizer.setSignature(engine.numerator);
+    visualizer.setPattern(AudioEngine.RHYTHMS[engine.rhythm].notes);
+    updateStatus();
+  }
+
+  function updateStatus() {
+    els.statusBpm.textContent = engine.bpm;
+    els.statusSig.textContent = `${engine.numerator}/${engine.denominator}`;
+    els.statusRhythm.textContent = RHYTHM_LABELS[engine.rhythm] || '-';
+    els.statusSound.textContent = SOUND_LABELS[els.soundSelect.value] || els.soundSelect.value;
+  }
+
+  // ============ 节拍回调 ============
+  engine.onBeat = (info) => {
+    visualizer.pulse(info.beat, info.subBeat, info.isAccent);
+    els.statusBeat.textContent = `${info.beat + 1}/${engine.numerator}`;
+    els.statusSubBeat.textContent = `${info.subBeat + 1}/${info.subCount}`;
+    els.statusMeasure.textContent = info.measure + 1;
+    els.statusMeasures.textContent = info.measure;
+  };
+
+  engine.onMeasure = (m) => {
+    if (currentMode === 'practice' && practice.running) practice.onMeasure(m);
+    if (currentMode === 'stage' && stage.running) {
+      stage.onMeasure(m);
+      // 歌曲自然播完：舞台不再连播，在边界时刻切断已预调度的声音后停止
+      if (!stage.running) {
+        stopAll(m && m.time);
+        els.vizMeta.textContent = '播放结束';
+      }
+    }
+  };
+
+  // ============ 播放控制 ============
+  function togglePlay() {
+    if (engine.isPlaying) {
+      stopAll();
+    } else {
+      startPlay();
+    }
+  }
+
+  /** 重置可视化状态栏的运行数据（新播放开始时调用） */
+  function resetRuntimeDisplay() {
+    els.statusBeat.textContent = '-';
+    els.statusSubBeat.textContent = '-';
+    els.statusMeasure.textContent = '1';
+    els.statusMeasures.textContent = '0';
+    els.statusRuntime.textContent = '00:00';
+  }
+
+  /** 把引擎当前拍号/节奏型/BPM 同步到可视化动画 */
+  function syncVisualFromEngine() {
+    visualizer.setBPM(engine.bpm);
+    visualizer.setSignature(engine.numerator);
+    visualizer.setPattern(AudioEngine.RHYTHMS[engine.rhythm].notes);
+  }
+
+  function startPlay() {
+    // 不同模式的启动逻辑
+    if (currentMode === 'practice' && activePracticeId) {
+      practice.start(activePracticeId);
+    } else if (currentMode === 'stage' && activeSongIndex >= 0) {
+      stage.playAt(activeSongIndex);
+    } else {
+      applyConfigToEngine();
+    }
+    engine.start();
+    resetRuntimeDisplay();
+    syncVisualFromEngine();
+    visualizer.setPlaying(true);
+    els.playBtn.classList.add('playing');
+    els.playBtn.querySelector('.play-label').textContent = '停止';
+    els.vizMeta.textContent = `播放中 · ${engine.bpm} BPM · ${engine.numerator}/${engine.denominator}`;
+    startPollLoop();
+  }
+
+  function stopAll(flushFrom) {
+    engine.stop(flushFrom);
+    practice.stop();
+    stage.stop();
+    visualizer.setPlaying(false);
+    els.playBtn.classList.remove('playing');
+    els.playBtn.querySelector('.play-label').textContent = '开始';
+    els.vizMeta.textContent = '准备就绪 · 按空格开始';
+    resetRuntimeDisplay();
+  }
+
+  els.playBtn.addEventListener('click', togglePlay);
+  els.muteBtn.addEventListener('click', () => {
+    engine.setMuted(!engine.muted);
+    els.muteBtn.textContent = engine.muted ? '🔇' : '🔊';
+  });
+  els.resetBtn.addEventListener('click', () => {
+    stopAll();
+    // 重置为基础配置
+    els.bpmInput.value = 120;
+    els.bpmSlider.value = 120;
+    els.sigSelect.value = '4/4';
+    els.rhythmSelect.value = 'quarter';
+    applyConfigToEngine();
+  });
+
+  // ============ BPM 控制 ============
+  function setBPM(v) {
+    v = Math.max(40, Math.min(240, v | 0));
+    els.bpmInput.value = v;
+    els.bpmSlider.value = v;
+    engine.setBPM(v);
+    visualizer.setBPM(v);
+    updateStatus();
+    els.vizMeta.textContent = `播放中 · ${v} BPM · ${engine.numerator}/${engine.denominator}`;
+  }
+
+  els.bpmInput.addEventListener('input', () => setBPM(parseInt(els.bpmInput.value, 10) || 40));
+  els.bpmSlider.addEventListener('input', () => setBPM(parseInt(els.bpmSlider.value, 10)));
+  document.querySelectorAll('.step-btn[data-bpm-step]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const step = parseInt(btn.dataset.bpmStep, 10);
+      setBPM(engine.bpm + step);
+    });
+  });
+
+  // ============ 拍号 ============
+  function setSignature(n, d) {
+    const v = `${n}/${d}`;
+    // 若下拉框存在该拍号则同步选中（舞台/练习模式可能从外部切换）
+    if (Array.from(els.sigSelect.options).some(o => o.value === v)) {
+      els.sigSelect.value = v;
+    }
+    engine.setSignature(n, d);
+    visualizer.setSignature(n);
+    updateStatus();
+  }
+  els.sigSelect.addEventListener('change', () => {
+    const [n, d] = els.sigSelect.value.split('/').map(Number);
+    setSignature(n, d);
+  });
+
+  // ============ 节奏型 ============
+  els.rhythmSelect.innerHTML = rhythmOptions('quarter');
+  els.rhythmSelect.addEventListener('change', () => {
+    const r = els.rhythmSelect.value;
+    engine.setRhythm(r);
+    visualizer.setPattern(AudioEngine.RHYTHMS[r].notes);
+    updateStatus();
+  });
+
+  // ============ 音色 & 音量 ============
+  els.soundSelect.addEventListener('change', () => {
+    engine.setSound(els.soundSelect.value);
+    updateStatus();
+  });
+  els.volSlider.addEventListener('input', () => {
+    const v = parseInt(els.volSlider.value, 10);
+    engine.setVolume(v);
+    els.volValue.textContent = v;
+  });
+
+  // ============ 模式切换 ============
+  function switchMode(mode) {
+    // 切模式先停止播放，避免残留旧模式的方案/歌曲在跑
+    if (engine.isPlaying) stopAll();
+    currentMode = mode;
+    els.modeBtns.forEach(b => {
+      const active = b.dataset.mode === mode;
+      b.classList.toggle('active', active);
+      b.setAttribute('aria-selected', active);
+    });
+    els.panelViews.forEach(v => {
+      v.classList.toggle('hidden', v.dataset.view !== mode);
+    });
+    // 基础模式隐藏右侧列表区；练习/舞台显示加宽列表区
+    const showSide = mode === 'practice' || mode === 'stage';
+    els.sidePanel.classList.toggle('hidden', !showSide);
+    els.layout.classList.toggle('with-side', showSide);
+    // body 模式类：练习/舞台下隐藏控制面板与运行信息
+    document.body.classList.toggle('mode-basic', mode === 'basic');
+    document.body.classList.toggle('mode-practice', mode === 'practice');
+    document.body.classList.toggle('mode-stage', mode === 'stage');
+    if (mode === 'practice') renderPracticeList();
+    if (mode === 'stage') renderSongList();
+    // 模式切换后 canvas 尺寸可能变化，重算
+    requestAnimationFrame(() => visualizer.resize());
+  }
+  els.modeBtns.forEach(b => b.addEventListener('click', () => switchMode(b.dataset.mode)));
+
+  // ============ 练习模式 ============
+  practice.onUpdate = (state) => {
+    els.psName.textContent = state.planName;
+    els.psBpm.textContent = state.currentBPM;
+    els.psTarget.textContent = state.targetBPM;
+    els.psRemain.textContent = state.remainText;
+    els.psProgress.style.width = state.progress + '%';
+    if (state.running) {
+      // 同步练习方案的拍号/节奏型/BPM 到引擎与可视化动画
+      setBPM(state.currentBPM);
+      visualizer.setSignature(engine.numerator);
+      visualizer.setPattern(AudioEngine.RHYTHMS[engine.rhythm].notes);
+      els.vizMeta.textContent = `练习中 · ${state.planName} · ${state.currentBPM} BPM`;
+    }
+  };
+  practice.onFinish = () => {
+    stopAll();
+    els.vizMeta.textContent = '练习完成';
+  };
+
+  els.addPractice.addEventListener('click', () => openPracticeModal(null));
+
+  function renderPracticeList() {
+    const list = practice.list();
+    els.practiceList.innerHTML = '';
+    list.forEach((p, i) => {
+      const li = document.createElement('li');
+      li.className = 'item-row' + (p.id === activePracticeId ? ' playing' : '');
+      li.innerHTML = `
+        <span class="item-num">${i + 1}</span>
+        <div class="item-info">
+          <div class="item-name">${escapeHtml(p.name)}</div>
+          <div class="item-sub">${p.startBPM}→${p.targetBPM} BPM · ${p.triggerType === 'time' ? p.interval + '分钟' : p.interval + '小节'} · +${p.stepBPM}</div>
+        </div>
+        <div class="item-actions">
+          <button data-act="play" title="播放">▶</button>
+          <button data-act="edit" title="编辑">✎</button>
+          <button data-act="del" title="删除">🗑</button>
+        </div>`;
+      li.querySelector('[data-act="play"]').addEventListener('click', (e) => {
+        e.stopPropagation();
+        activePracticeId = p.id;
+        stopAll();
+        practice.start(p.id);
+        engine.start();
+        resetRuntimeDisplay();
+        syncVisualFromEngine();
+        visualizer.setPlaying(true);
+        els.playBtn.classList.add('playing');
+        els.playBtn.querySelector('.play-label').textContent = '停止';
+        startPollLoop();
+        renderPracticeList();
+      });
+      li.querySelector('[data-act="edit"]').addEventListener('click', (e) => {
+        e.stopPropagation();
+        openPracticeModal(p);
+      });
+      li.querySelector('[data-act="del"]').addEventListener('click', (e) => {
+        e.stopPropagation();
+        practice.remove(p.id);
+        if (activePracticeId === p.id) activePracticeId = null;
+        renderPracticeList();
+      });
+      els.practiceList.appendChild(li);
+    });
+  }
+
+  function openPracticeModal(plan) {
+    const isEdit = !!plan;
+    els.modalTitle.textContent = isEdit ? '编辑练习方案' : '新建练习方案';
+    els.modalBody.innerHTML = `
+      <div class="form-row">
+        <label>方案名称</label>
+        <input type="text" id="m-p-name" value="${plan ? escapeHtml(plan.name) : ''}" placeholder="如：爬格子 60→120">
+      </div>
+      <div class="form-grid-2">
+        <div class="form-row"><label>起始 BPM</label><input type="number" id="m-p-start" min="40" max="240" value="${plan ? plan.startBPM : 60}"></div>
+        <div class="form-row"><label>目标 BPM</label><input type="number" id="m-p-target" min="40" max="240" value="${plan ? plan.targetBPM : 120}"></div>
+        <div class="form-row"><label>递增步长</label><input type="number" id="m-p-step" min="1" max="50" value="${plan ? plan.stepBPM : 5}"></div>
+        <div class="form-row"><label>递增间隔</label><input type="number" id="m-p-interval" min="1" value="${plan ? plan.interval : 1}"></div>
+      </div>
+      <div class="form-row">
+        <label>递增触发</label>
+        <select id="m-p-trigger">
+          <option value="time" ${plan && plan.triggerType === 'time' ? 'selected' : ''}>按时间（分钟）</option>
+          <option value="measure" ${plan && plan.triggerType === 'measure' ? 'selected' : ''}>按小节数</option>
+        </select>
+      </div>
+      <div class="form-row">
+        <label>到达目标后</label>
+        <select id="m-p-end">
+          <option value="stop" ${plan ? (plan.endAction === 'stop' ? 'selected' : '') : 'selected'}>停止</option>
+          <option value="loop" ${plan && plan.endAction === 'loop' ? 'selected' : ''}>循环回初始</option>
+          <option value="hold" ${plan && plan.endAction === 'hold' ? 'selected' : ''}>保持目标</option>
+        </select>
+      </div>
+      <div class="form-grid-2">
+        <div class="form-row"><label>拍号</label>
+          <select id="m-p-sig">
+            ${['2/4','3/4','4/4','5/4','6/8','7/8','9/8','12/8'].map(s =>
+              `<option value="${s}" ${plan && plan.signature === s ? 'selected' : ''}>${s}</option>`
+            ).join('')}
+          </select>
+        </div>
+        <div class="form-row"><label>节奏型</label>
+          <select id="m-p-rhythm">
+            ${rhythmOptions(plan && plan.rhythm ? plan.rhythm : 'quarter')}
+          </select>
+        </div>
+      </div>
+      <div class="form-row"><label>音色</label>
+        <select id="m-p-sound">
+          ${soundOptions(plan && plan.sound ? plan.sound : 'click')}
+        </select>
+      </div>
+    `;
+    showModal(() => {
+      const data = {
+        name: $('m-p-name').value || '未命名',
+        startBPM: parseInt($('m-p-start').value, 10) || 60,
+        targetBPM: parseInt($('m-p-target').value, 10) || 120,
+        stepBPM: parseInt($('m-p-step').value, 10) || 5,
+        interval: parseInt($('m-p-interval').value, 10) || 1,
+        triggerType: $('m-p-trigger').value,
+        endAction: $('m-p-end').value,
+        signature: $('m-p-sig').value,
+        rhythm: $('m-p-rhythm').value,
+        sound: $('m-p-sound').value
+      };
+      if (isEdit) practice.update(plan.id, data);
+      else practice.add(data);
+      renderPracticeList();
+    });
+  }
+
+  // ============ 舞台模式 ============
+  stage.onUpdate = (state) => {
+    els.ssCurrent.textContent = state.currentSong;
+    els.ssMeasure.textContent = state.running ? `${state.currentMeasure}/${state.totalMeasures}` : '-';
+    els.ssNext.textContent = state.nextSong;
+    if (state.running) {
+      // 每小节同步：段落切换后拍号/节奏型/BPM 的视觉立即更新
+      syncVisualFromEngine();
+      els.statusSig.textContent = `${engine.numerator}/${engine.denominator}`;
+      els.statusRhythm.textContent = RHYTHM_LABELS[engine.rhythm] || '-';
+      els.statusBpm.textContent = engine.bpm;
+      els.vizMeta.textContent = `舞台 · ${state.currentSong} · ${state.currentMeasure}/${state.totalMeasures}`;
+    }
+  };
+  stage.onSongChange = (song) => {
+    if (song) {
+      syncVisualFromEngine();
+      els.vizMeta.textContent = `播放：${song.name}`;
+    }
+    renderSongList();
+  };
+
+  els.addSong.addEventListener('click', () => openSongModal(null));
+
+  function renderSongList() {
+    const list = stage.list();
+    els.songList.innerHTML = '';
+    list.forEach((s, i) => {
+      const li = document.createElement('li');
+      li.className = 'item-row' + (i === activeSongIndex && stage.running ? ' playing' : '');
+      li.draggable = true;
+      li.dataset.index = i;
+      li.innerHTML = `
+        <span class="item-num">${i + 1}</span>
+        <div class="item-info">
+          <div class="item-name">${escapeHtml(s.name)}</div>
+          <div class="item-sub">${escapeHtml(s.artist || '-')} · ${stage.totalMeasures(s)} 小节 · ${stage.startBPM(s)} BPM</div>
+        </div>
+        <div class="item-actions">
+          <button data-act="up" title="上移">↑</button>
+          <button data-act="down" title="下移">↓</button>
+          <button data-act="edit" title="编辑">✎</button>
+          <button data-act="del" title="删除">🗑</button>
+        </div>`;
+      li.addEventListener('dblclick', () => {
+        stopAll();
+        // playAt 会将所选歌曲提到第一顺序位
+        stage.playAt(i);
+        activeSongIndex = 0;
+        engine.start();
+        resetRuntimeDisplay();
+        syncVisualFromEngine();
+        visualizer.setPlaying(true);
+        els.playBtn.classList.add('playing');
+        els.playBtn.querySelector('.play-label').textContent = '停止';
+        startPollLoop();
+        renderSongList();
+      });
+      li.querySelector('[data-act="up"]').addEventListener('click', (e) => {
+        e.stopPropagation();
+        stage.moveUp(i);
+        renderSongList();
+      });
+      li.querySelector('[data-act="down"]').addEventListener('click', (e) => {
+        e.stopPropagation();
+        stage.moveDown(i);
+        renderSongList();
+      });
+      li.querySelector('[data-act="edit"]').addEventListener('click', (e) => {
+        e.stopPropagation();
+        openSongModal(s);
+      });
+      li.querySelector('[data-act="del"]').addEventListener('click', (e) => {
+        e.stopPropagation();
+        stage.remove(s.id);
+        renderSongList();
+      });
+      // 拖拽排序
+      li.addEventListener('dragstart', (e) => {
+        e.dataTransfer.setData('text/plain', String(i));
+        li.style.opacity = '0.5';
+      });
+      li.addEventListener('dragend', () => li.style.opacity = '');
+      li.addEventListener('dragover', (e) => { e.preventDefault(); });
+      li.addEventListener('drop', (e) => {
+        e.preventDefault();
+        const from = parseInt(e.dataTransfer.getData('text/plain'), 10);
+        const to = parseInt(li.dataset.index, 10);
+        if (from !== to && !isNaN(from) && !isNaN(to)) {
+          stage.move(from, to);
+          renderSongList();
+        }
+      });
+      els.songList.appendChild(li);
+    });
+  }
+
+  function openSongModal(song) {
+    const isEdit = !!song;
+    els.modalTitle.textContent = isEdit ? '编辑歌曲' : '新建歌曲';
+    const segs = song ? (song.segments || []) : [];
+    els.modalBody.innerHTML = `
+      <div class="form-row"><label>歌曲名</label><input type="text" id="m-s-name" value="${song ? escapeHtml(song.name) : ''}" placeholder="如：Sample Song"></div>
+      <div class="form-grid-2">
+        <div class="form-row"><label>歌手</label><input type="text" id="m-s-artist" value="${song ? escapeHtml(song.artist || '') : ''}"></div>
+        <div class="form-row"><label>备注</label><input type="text" id="m-s-note" value="${song ? escapeHtml(song.note || '') : ''}"></div>
+      </div>
+      <div class="form-row">
+        <label>小节/段落配置</label>
+        <div class="seg-list" id="seg-list"></div>
+        <button type="button" class="seg-add" id="seg-add">+ 添加段</button>
+      </div>
+    `;
+    const segList = $('seg-list');
+    function renderSegs(arr) {
+      segList.innerHTML = `
+        <div class="seg-row" style="font-size:11px;color:var(--text-dim);font-weight:600;">
+          <span>起小节</span><span>止小节</span><span>BPM</span><span>拍号</span><span>节奏型</span><span></span>
+        </div>
+      `;
+      arr.forEach((seg, i) => {
+        const row = document.createElement('div');
+        row.className = 'seg-row';
+        row.innerHTML = `
+          <input type="number" min="1" value="${seg.start}" data-k="start">
+          <input type="number" min="1" value="${seg.end}" data-k="end">
+          <input type="number" min="40" max="240" value="${seg.bpm}" data-k="bpm">
+          <select data-k="signature">
+            ${['2/4','3/4','4/4','5/4','6/8','7/8','9/8','12/8'].map(s =>
+              `<option value="${s}" ${seg.signature === s ? 'selected' : ''}>${s}</option>`).join('')}
+          </select>
+          <select data-k="rhythm">
+            ${rhythmOptionsShort(seg.rhythm || 'quarter')}
+          </select>
+          <button data-act="del-seg" title="删除">✕</button>
+        `;
+        row.querySelectorAll('[data-k]').forEach(inp => {
+          inp.addEventListener('change', () => {
+            arr[i][inp.dataset.k] = inp.value;
+          });
+        });
+        row.querySelector('[data-act="del-seg"]').addEventListener('click', () => {
+          arr.splice(i, 1);
+          renderSegs(arr);
+        });
+        segList.appendChild(row);
+      });
+    }
+    const segments = segs.map(s => Object.assign({ start: 1, end: 4, bpm: 120, signature: '4/4', rhythm: 'quarter', sound: 'click', note: '' }, s));
+    if (!segments.length) segments.push({ start: 1, end: 8, bpm: 120, signature: '4/4', rhythm: 'quarter', sound: 'click', note: '' });
+    renderSegs(segments);
+    $('seg-add').addEventListener('click', () => {
+      const lastEnd = segments.length ? segments[segments.length - 1].end : 0;
+      segments.push({ start: lastEnd + 1, end: lastEnd + 8, bpm: 120, signature: '4/4', rhythm: 'quarter', sound: 'click', note: '' });
+      renderSegs(segments);
+    });
+
+    showModal(() => {
+      const data = {
+        name: $('m-s-name').value || '未命名歌曲',
+        artist: $('m-s-artist').value || '',
+        note: $('m-s-note').value || '',
+        segments
+      };
+      if (isEdit) stage.update(song.id, data);
+      else stage.add(data);
+      renderSongList();
+    });
+  }
+
+  // ============ 模态框 ============
+  let modalOkHandler = null;
+  function showModal(onOk) {
+    els.modalMask.classList.remove('hidden');
+    modalOkHandler = onOk;
+  }
+  function hideModal() {
+    els.modalMask.classList.add('hidden');
+    modalOkHandler = null;
+  }
+  els.modalOk.addEventListener('click', () => { if (modalOkHandler) modalOkHandler(); hideModal(); });
+  els.modalCancel.addEventListener('click', hideModal);
+  els.modalClose.addEventListener('click', hideModal);
+  els.modalMask.addEventListener('click', (e) => { if (e.target === els.modalMask) hideModal(); });
+
+  // ============ 主循环 ============
+  let pollId = null;
+  function startPollLoop() {
+    if (pollId) cancelAnimationFrame(pollId);
+    const loop = () => {
+      const state = engine.pollState();
+      if (state && state.isPlaying) {
+        // 运行时长
+        const sec = Math.floor(state.runtime);
+        const m = Math.floor(sec / 60);
+        const s = sec % 60;
+        els.statusRuntime.textContent = `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+        // 练习模式 tick（处理时间触发）
+        if (currentMode === 'practice' && practice.running) practice.tick();
+      }
+      pollId = requestAnimationFrame(loop);
+    };
+    pollId = requestAnimationFrame(loop);
+  }
+
+  // ============ 快捷键（仅基础模式；练习/舞台模式禁用空格与上下箭头） ============
+  document.addEventListener('keydown', (e) => {
+    if (currentMode !== 'basic') return;
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA') return;
+    if (e.code === 'Space') { e.preventDefault(); togglePlay(); }
+    else if (e.code === 'ArrowUp') { e.preventDefault(); setBPM(engine.bpm + 1); }
+    else if (e.code === 'ArrowDown') { e.preventDefault(); setBPM(engine.bpm - 1); }
+  });
+
+  // ============ 工具 ============
+  function escapeHtml(str) {
+    if (str == null) return '';
+    return String(str).replace(/[&<>"']/g, c => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    }[c]));
+  }
+
+  // ============ 初始化 ============
+  document.body.classList.add('mode-basic');
+  initTheme();
+  applyConfigToEngine();
+  els.volValue.textContent = els.volSlider.value;
+  renderPracticeList();
+  renderSongList();
+})();
+
+</script>
+</body>
+</html>
